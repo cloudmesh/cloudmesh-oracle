@@ -60,5 +60,10 @@ Naturally you nee to deal with keys and secgroups also
 
 ## References
 
+* https://oracle-cloud-infrastructure-python-sdk.readthedocs.io/en/latest/
+* https://oracle-cloud-infrastructure-python-sdk.readthedocs.io/en/latest/api/core/client/oci.core.ComputeClient.html
+* https://docs.cloud.oracle.com/iaas/Content/API/SDKDocs/pythonsdk.htm
+* https://github.com/oracle/oci-python-sdk
+* https://github.com/oracle/oci-python-sdk/blob/master/examples/launch_instance_example.py
 * https://github.com/cloudmesh-community/fa19-516-162/blob/master/project/report.md
 
