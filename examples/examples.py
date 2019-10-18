@@ -2,10 +2,29 @@ import oci
 from cloudmesh.configuration.Config import Config
 
 # Initialize
-name = "oracle"
 config_file = "~/.cloudmesh/cloudmesh.yaml"
-config = Config(config_file)["cloudmesh"]["cloud"][name]
+config = Config(config_file)["cloudmesh"]["cloud"]["oracle"]["credentials"]
 compute = oci.core.ComputeClient(config)
+virtual_network = oci.core.VirtualNetworkClient(config)
+identity_client = oci.identity.IdentityClient(config)
+
+# Get server metadata
+def get_instance_metadata(vm_instance):
+    info = compute.get_instance("ocid1.instance.oc1.iad.abuwcljtdmuy2f4ftcuo7of5wd3gnqwbidt4e3cqnflnqgdd66pl2jk6lmwq").data
+    print(info.metadata)
+
+
+# Find status of a VM instance
+def get_instance_status(vm_instance):
+    status = compute.get_instance(vm_instance).data
+    print(status.lifecycle_state)
+
+
+# Find information about a VM instance
+def get_instance_status(vm_instance):
+    info = compute.get_instance(vm_instance).data
+    print(info)
+
 
 # Lists account users
 def list_users():
@@ -41,9 +60,10 @@ def list_images():
 
 # Find image with given name
 # image_id str
-def get_image(image_id):
-    image = compute.get_image(image_id).data
-    print(image)
+def get_image(image_name):
+    compartment_id = config["compartment_id"]
+    images = compute.list_images(compartment_id, display_name=image_name)
+    return images.data[0]
 
 
 # List all flavors in a compartment
@@ -87,3 +107,85 @@ def reboot_instance(vm_instance):
 # vm_instance_id str
 def terminate_instance(vm_instance):
     compute.terminate_instance(vm_instance)
+
+
+def get_availability_domain(identity_client, compartment_id):
+    availability_domain = identity_client.list_availability_domains(compartment_id).data[0]
+    return availability_domain
+
+
+def create_vcn_and_subnet(virtual_network, compartment_id, availability_domain):
+    # Create a VCN
+    vcn_name = 'test_vcn'
+    cidr_block = "10.0.0.0/16"
+    result = virtual_network.list_vcns(compartment_id, display_name=vcn_name).data
+
+    if not result:
+        vcn_details = oci.core.models.CreateVcnDetails(cidr_block=cidr_block, display_name=vcn_name, compartment_id=compartment_id)
+        result = virtual_network.create_vcn(vcn_details).data
+    else:
+        result = result[0]
+
+    vcn = oci.wait_until(
+        virtual_network,
+        virtual_network.get_vcn(result.id),
+        'lifecycle_state',
+        'AVAILABLE',
+        max_wait_seconds=300
+    ).data
+    print('Created VCN')
+
+    # Create a subnet
+    subnet_name = 'test_subnet'
+    subnet_cidr_block1 = "10.0.0.0/24"
+    result_subnet = virtual_network.list_subnets(compartment_id, vcn.id, display_name=subnet_name).data
+    if not result_subnet:
+        result_subnet = virtual_network.create_subnet(
+            oci.core.models.CreateSubnetDetails(
+                compartment_id=compartment_id,
+                availability_domain=availability_domain,
+                display_name=subnet_name,
+                vcn_id=vcn.id,
+                cidr_block=subnet_cidr_block1
+            )
+        ).data
+    else:
+        result_subnet = result_subnet[0]
+
+    subnet = oci.wait_until(
+        virtual_network,
+        virtual_network.get_subnet(result_subnet.id),
+        'lifecycle_state',
+        'AVAILABLE',
+        max_wait_seconds=300
+    ).data
+    print('Created subnet')
+
+    return {'vcn': vcn, 'subnet': subnet}
+
+create_instance_details = oci.core.models.LaunchInstanceDetails()
+compartment_id = config["compartment_id"]
+create_instance_details.compartment_id = compartment_id
+availability_domain = get_availability_domain(identity_client, compartment_id)
+vcn_and_subnet = create_vcn_and_subnet(virtual_network, compartment_id, availability_domain.name)
+create_instance_details.availability_domain = availability_domain.name
+create_instance_details.display_name = 'test_instance'
+subnet = vcn_and_subnet['subnet']
+create_instance_details.create_vnic_details = oci.core.models.CreateVnicDetails(
+        subnet_id=subnet.id,
+        assign_public_ip=False
+    )
+create_instance_details.image_id = get_image('Oracle-Linux-7.7-2019.08.28-0').id
+create_instance_details.shape = 'VM.Standard.E2.1'
+
+result = compute.launch_instance(create_instance_details)
+instance_ocid = result.data.id
+
+get_instance_response = oci.wait_until(
+    compute,
+    compute.get_instance(instance_ocid),
+    'lifecycle_state',
+    'RUNNING',
+    max_wait_seconds=600
+)
+print('Launched instance')
