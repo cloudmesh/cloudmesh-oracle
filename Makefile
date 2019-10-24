@@ -31,6 +31,19 @@ list:
 	$(call banner, "TARGETS")
 	@grep '^[^#[:space:]].*:' Makefile
 
+
+requirements:
+	echo "cloudmesh-cmd5" > tmp.txt
+	echo "cloudmesh-sys" >> tmp.txt
+	echo "cloudmesh-inventory" >> tmp.txt
+	echo "cloudmesh-configuration" >> tmp.txt
+	echo "cloudmesh-cloud" >> tmp.txt
+	pip-compile setup.py
+	fgrep -v "# via" requirements.txt | fgrep -v "cloudmesh" >> tmp.txt
+	mv tmp.txt requirements.txt
+	git commit -m "update requirements" requirements.txt
+	git push
+
 setup:
 	# brew update
 	# brew install mongodb
@@ -40,6 +53,9 @@ setup:
 
 kill:
 	killall mongod
+
+
+
 
 mongo:
 	$(call terminal, $(MONGOD))
