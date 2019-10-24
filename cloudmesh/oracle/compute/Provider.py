@@ -216,17 +216,19 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param configuration: The location of the yaml configuration file
         """
 
-        conf = Config(configuration)["cloudmesh"]
+        self.config = Config(config_path=configuration)
+
+        conf = Config(config_path=configuration)["cloudmesh"]
         super().__init__(name, conf)
 
-        self.user = Config()["cloudmesh"]["profile"]["user"]
+        self.user = self.config["cloudmesh.profile.user"]
         self.spec = conf["cloud"][name]
         self.cloud = name
 
         self.default = self.spec["default"]
         self.cloudtype = self.spec["cm"]["kind"]
 
-        self.cred = self.spec["credentials"]
+        self.cred = self.config[f"cloudmesh.cloud.{name}.credentials"]
 
         if self.cred["OS_PASSWORD"] == 'TBD':
             Console.error("The password TBD is not allowed")
