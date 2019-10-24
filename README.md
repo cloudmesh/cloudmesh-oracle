@@ -24,6 +24,32 @@ TBD
 
 ### Cloudmesh Config
 
+Add the following entry to you cloudmesh.yaml file:
+
+```
+oracle:
+      cm:
+        active: true
+        heading: ORACLE
+        host: cloud.oracle.com
+        label: oracle
+        kind: oracle
+        version: TBD
+        service: compute
+      default:
+        image: ami-0f65671a86f061fcd
+        size: t2.micro
+      credentials:
+        user : TBD
+        fingerprint : TBD
+        key_file : ~/.oci/oci_api_key.pem
+        pass_phrase : TBD
+        tenancy : TBD
+        compartment_id : TBD
+        region : us-ashburn-1
+```
+
+        
 TBD. describe how we use cloudmesh config
 
 design an entry
