@@ -1,3 +1,5 @@
+import oci
+
 import os
 import subprocess
 from ast import literal_eval
@@ -5,7 +7,6 @@ from time import sleep
 from sys import platform
 import ctypes
 
-import openstack
 from cloudmesh.abstractclass.ComputeNodeABC import ComputeNodeABC
 from cloudmesh.common.Printer import Printer
 from cloudmesh.common.console import Console
@@ -26,27 +27,12 @@ from cloudmesh.image.Image import Image
 class Provider(ComputeNodeABC, ComputeProviderPlugin):
     kind = "oracle"
 
-    ### TODO: THIS HAS TO BE CHANGED
-
     vm_state = [
-        'ACTIVE',
-        'BUILDING',
-        'DELETED',
-        'ERROR',
-        'HARD_REBOOT',
-        'PASSWORD',
-        'PAUSED',
-        'REBOOT',
-        'REBUILD',
-        'RESCUED',
-        'RESIZED',
-        'REVERT_RESIZE',
-        'SHUTOFF',
-        'SOFT_DELETED',
+        'STARTING',
+        'RUNNING',
+        'STOPPING',
         'STOPPED',
-        'SUSPENDED',
-        'UNKNOWN',
-        'VERIFY_RESIZE'
+        'UNKNOWN'
     ]
 
     ### TODO: THIS HAS TO BE CHANGED
@@ -244,13 +230,14 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         self.cred = self.spec["credentials"]
 
-        ### TODO: THIS HAS TO BE CHANGED
-
         if self.cred["OS_PASSWORD"] == 'TBD':
             Console.error("The password TBD is not allowed")
         self.credential = self._get_credentials(self.cred)
 
-        self.cloudman = openstack.connect(**self.credential)
+        self.compute = oci.core.ComputeClient(self.credential)
+        self.virtual_network = oci.core.VirtualNetworkClient(self.credential)
+        self.identity_client = oci.identity.IdentityClient(self.credential)
+        self.compartment_id = self.credential["compartment_id"]
 
         # self.default_image = deft["image"]
         # self.default_size = deft["size"]
@@ -634,7 +621,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return: dict or libcloud object
         """
 
-        if self.cloudman:
+        if self.compute:
             entries = []
             for entry in d:
                 entries.append(dict(entry))
@@ -648,9 +635,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         Lists the images on the cloud
         :return: dict or libcloud object
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
-        return self.get_list(self.cloudman.compute.images(),
+        return self.get_list(self.compute.list_images(self.compartment_id),
                              kind="image")
 
     def image(self, name=None):
@@ -659,9 +645,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: The name of the image
         :return: the dict of the image
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
-        return self.find(self.images(**kwargs), name=name)
+        return self.compute.list_images(self.compartment_id, display_name=name)
 
     def flavors(self):
         """
@@ -669,9 +654,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         :return: dict of flavors
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
-        return self.get_list(self.cloudman.compute.flavors(),
+        return self.get_list(self.compute.list_shapes(self.compartment_id),
                              kind="flavor")
 
     def flavor(self, name=None):
@@ -680,7 +664,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: The name of the flavor
         :return: The dict of the flavor
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
         return self.find(self.flavors(), name=name)
 
@@ -691,11 +674,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: A list of node name
         :return:  A list of dict representing the nodes
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
-        server = self.cloudman.get_server(name)['id']
-        r = self.cloudman.compute.start_server(server)
-        return r
+        vm_instance = self.compute.list_instances(self.compartment_id, name)['id']
+        res = self.compute.instance_action(vm_instance, 'START')
+        return res
 
     def stop(self, name=None):
         """
@@ -704,11 +686,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: A list of node name
         :return:  A list of dict representing the nodes
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
-        server = self.cloudman.get_server(name)['id']
-        r = self.cloudman.compute.stop_server(server)
-        return r
+        vm_instance = self.compute.list_instances(self.compartment_id, name)['id']
+        res = self.compute.instance_action(vm_instance, 'SOFTSTOP')
+        return res
 
     def pause(self, name=None):
         """
@@ -742,7 +723,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         """
         Gets the information of a node with a given name
 
-        :param name: The name of teh virtual machine
+        :param name: The name of the virtual machine
         :return: The dict representing the node including updated status
         """
         ### TODO: THIS HAS TO BE CHANGED
@@ -821,12 +802,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: the name of the node
         :return: the dict of the node
         """
-        ### TODO: THIS HAS TO BE CHANGED
-
-        server = self.cloudman.get_server(name)['id']
-        r = self.cloudman.compute.resume_server(server)
-
-        return r
+        vm_instance = self.compute.list_instances(self.compartment_id, name)['id']
+        res = self.compute.instance_action(vm_instance, 'START')
+        return res
 
     def list(self):
         """
@@ -834,29 +812,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         :return: dict of vms
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
-        servers = self.get_list(self.cloudman.compute.servers(), kind="vm")
-
-        result = []
-        for server in servers:
-
-            if 'cm' in server['metadata']:
-                metadata = server['metadata']['cm']
-                cm = literal_eval(metadata)
-                if 'cm' in server:
-                    server['cm'].update(cm)
-            try:
-                server['ip_public'] = self.get_public_ip(server=server)
-            except:
-                pass
-            try:
-                server['ip_private'] = self.get_private_ip(server=server)
-            except:
-                pass
-            result.append(server)
-
-        return result
+        return self.get_list(self.compute.list_instances(self.compartment_id).data, kind="vm")
 
     def destroy(self, name=None):
         """
