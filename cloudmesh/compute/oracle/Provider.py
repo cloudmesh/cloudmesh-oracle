@@ -192,21 +192,19 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
     @staticmethod
     def _get_credentials(config):
         """
-        Internal function to create a dict for the openstacksdk credentials.
+        Internal function to create a dict for the oraclesdk credentials.
 
         :param config: The credentials from the cloudmesh yaml file
-        :return: the dict for the openstacksdk
+        :return: the dict for the oraclesdk
         """
 
-        ### TODO: THIS HAS TO BE CHANGED
-
-        d = {'version': '2', 'username': config['OS_USERNAME'],
-             'password': config['OS_PASSWORD'],
-             'auth_url': config['OS_AUTH_URL'],
-             'project_id': config['OS_TENANT_NAME'],
-             'region_name': config['OS_REGION_NAME'],
-             'tenant_id': config['OS_TENANT_ID']}
-        # d['project_domain_name'] = config['OS_PROJECT_NAME']
+        d = {'version': '1',
+             'user': config['user'],
+             'fingerprint': config['fingerprint'],
+             'key_file': config['key_file'],
+             'pass_phrase': config['pass_phrase'],
+             'tenancy': config['tenancy'],
+             'compartment_id': config['compartment_id']}
         return d
 
     def __init__(self, name=None, configuration="~/.cloudmesh/cloudmesh.yaml"):
@@ -268,9 +266,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                      key, vm, image, flavor.
         :return: The list with the modified dicts
         """
-
-        ### TODO: THIS HAS TO BE CHANGED
-
 
         if elements is None:
             return None
@@ -821,13 +816,11 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: the name of the node
         :return: the dict of the node
         """
-        ### TODO: THIS HAS TO BE CHANGED
+        vm_instance = self.compute.list_instances(self.compartment_id, name)
+        r = self.compute.terminate_instance(vm_instance['id'])
+        vm_instance['status'] = 'DELETED'
 
-        server = self.info(name=name)[0]
-        r = self.cloudman.delete_server(name)
-        server['status'] = 'DELETED'
-
-        servers = self.update_dict([server], kind='vm')
+        servers = self.update_dict([vm_instance], kind='vm')
         return servers
 
     def reboot(self, name=None):
@@ -837,12 +830,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: A list of node name
         :return:  A list of dict representing the nodes
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
-        server = self.cloudman.get_server(name)['id']
-        r = self.cloudman.compute.reboot_server(server)
-
-        return r
+        vm_instance = self.compute.list_instances(self.compartment_id, name)
+        res = self.compute.instance_action(vm_instance, 'SOFTRESET')
+        return res
 
     def set_server_metadata(self, name, cm):
         """
