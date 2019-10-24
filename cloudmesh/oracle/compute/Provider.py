@@ -204,7 +204,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
              'key_file': config['key_file'],
              'pass_phrase': config['pass_phrase'],
              'tenancy': config['tenancy'],
-             'compartment_id': config['compartment_id']}
+             'compartment_id': config['compartment_id'],
+             'region': config['region']}
         return d
 
     def __init__(self, name=None, configuration="~/.cloudmesh/cloudmesh.yaml"):
@@ -230,8 +231,19 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         self.cred = self.config[f"cloudmesh.cloud.{name}.credentials"]
 
-        if self.cred["OS_PASSWORD"] == 'TBD':
-            Console.error("The password TBD is not allowed")
+        fields = ["user",
+        "fingerprint",
+        "key_file",
+        "pass_phrase",
+        "tenancy",
+        "compartment_id",
+        "region"]
+
+        print (self.cred)
+
+        for field in fields:
+            if self.cred[field] == 'TBD':
+                Console.error(f"The credential for Oracle cloud is incomplete. {field} must not be TBD")
         self.credential = self._get_credentials(self.cred)
 
         self.compute = oci.core.ComputeClient(self.credential)
@@ -278,6 +290,12 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         d = []
         for entry in _elements:
 
+            print (dir(entry))
+            from pprint import pprint
+            pprint (entry.__dict__)
+            print ("AAAA", type(entry), entry)
+            entry = entry.__dict__
+
             if "cm" not in entry:
                 entry['cm'] = {}
 
@@ -288,7 +306,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                 "kind": kind,
                 "driver": self.cloudtype,
                 "cloud": self.cloud,
-                "name": entry['name']
+                "name": entry['_display_name']
             })
 
             if kind == 'key':
@@ -317,6 +335,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                     DateTime.now())
 
             elif kind == 'image':
+
+                entry['name'] = entry["cm"]["name"] = entry["_display_name"]
 
                 entry["cm"]["created"] = entry["updated"] = str(
                     DateTime.now())
@@ -618,14 +638,16 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return: dict or libcloud object
         """
 
-        if self.compute:
-            entries = []
-            for entry in d:
-                entries.append(dict(entry))
-            # VERBOSE(entries)
-
-            return self.update_dict(entries, kind=kind)
-        return None
+        #if self.compute:
+        #    entries = []
+        #    for entry in d:
+        #        entries.append(dict(entry))
+        #    # VERBOSE(entries)
+        print ("TTTT")
+        ed = self.update_dict(d, kind=kind)
+        print("EDDD", ed)
+        return ed
+        #return None
 
     def images(self, **kwargs):
         """
@@ -633,7 +655,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return: dict or libcloud object
         """
 
-        return self.get_list(self.compute.list_images(self.compartment_id),
+        d = self.compute.list_images(self.compartment_id).data
+        print("FFFFF", type(d))
+        print (d)
+        return self.get_list(d,
                              kind="image")
 
     def image(self, name=None):
