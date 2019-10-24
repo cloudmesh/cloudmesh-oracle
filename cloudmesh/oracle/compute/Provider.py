@@ -239,8 +239,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         "compartment_id",
         "region"]
 
-        print (self.cred)
-
         for field in fields:
             if self.cred[field] == 'TBD':
                 Console.error(f"The credential for Oracle cloud is incomplete. {field} must not be TBD")
@@ -289,13 +287,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             _elements = [elements]
         d = []
         for entry in _elements:
-
-            print (dir(entry))
-            from pprint import pprint
-            pprint (entry.__dict__)
-            print ("AAAA", type(entry), entry)
-            entry = entry.__dict__
-
             if "cm" not in entry:
                 entry['cm'] = {}
 
@@ -308,6 +299,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                 "cloud": self.cloud,
                 "name": entry['_display_name']
             })
+
+            entry['_launch_options'] = entry['_launch_options'].__dict__
 
             if kind == 'key':
 
@@ -340,9 +333,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
                 entry["cm"]["created"] = entry["updated"] = str(
                     DateTime.now())
-
-            # elif kind == 'secgroup':
-            #    pass
 
             d.append(entry)
         return d
@@ -638,16 +628,12 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return: dict or libcloud object
         """
 
-        #if self.compute:
-        #    entries = []
-        #    for entry in d:
-        #        entries.append(dict(entry))
-        #    # VERBOSE(entries)
-        print ("TTTT")
-        ed = self.update_dict(d, kind=kind)
-        print("EDDD", ed)
-        return ed
-        #return None
+        if self.compute:
+            entries = []
+            for entry in d:
+                entries.append(entry.__dict__)
+            return self.update_dict(entries, kind=kind)
+        return None
 
     def images(self, **kwargs):
         """
@@ -656,10 +642,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         """
 
         d = self.compute.list_images(self.compartment_id).data
-        print("FFFFF", type(d))
-        print (d)
-        return self.get_list(d,
-                             kind="image")
+        return self.get_list(d, kind="image")
 
     def image(self, name=None):
         """
