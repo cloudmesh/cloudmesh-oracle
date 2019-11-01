@@ -296,11 +296,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             entry["cm"].update({
                 "kind": kind,
                 "driver": self.cloudtype,
-                "cloud": self.cloud,
-                "name": entry['_display_name']
+                "cloud": self.cloud
             })
-
-            entry['_launch_options'] = entry['_launch_options'].__dict__
 
             if kind == 'key':
 
@@ -312,27 +309,25 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                     entry['public_key'].split(" ", 1)[0].replace("ssh-", "")
 
             elif kind == 'vm':
-
+                print(entry)
+                entry['name'] = entry["cm"]["name"] = entry["_display_name"]
                 entry["cm"]["updated"] = str(DateTime.now())
-                if "created_at" in entry:
-                    entry["cm"]["created"] = str(entry["created_at"])
-                    # del entry["created_at"]
-                    if 'status' in entry:
-                        entry["cm"]["status"] = str(entry["status"])
-                else:
-                    entry["cm"]["created"] = entry["modified"]
+                entry["cm"]["created"] = str(entry["_time_created"])
+                entry["cm"]["status"] = str(entry["_lifecycle_state"])
+                entry['_launch_options'] = entry['_launch_options'].__dict__
+                entry['_source_details'] = entry['_source_details'].__dict__
+                entry['_agent_config'] = entry['_agent_config'].__dict__
 
             elif kind == 'flavor':
-
+                entry['name'] = entry["cm"]["name"] = entry["_shape"]
                 entry["cm"]["created"] = entry["updated"] = str(
                     DateTime.now())
 
             elif kind == 'image':
-
                 entry['name'] = entry["cm"]["name"] = entry["_display_name"]
-
                 entry["cm"]["created"] = entry["updated"] = str(
                     DateTime.now())
+                entry['_launch_options'] = entry['_launch_options'].__dict__
 
             d.append(entry)
         return d
@@ -659,9 +654,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         :return: dict of flavors
         """
-
-        return self.get_list(self.compute.list_shapes(self.compartment_id),
-                             kind="flavor")
+        flavor_list = self.compute.list_shapes(self.compartment_id).data
+        return self.get_list(flavor_list, kind="flavor")
 
     def flavor(self, name=None):
         """
@@ -680,9 +674,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return:  A list of dict representing the nodes
         """
 
-        vm_instance = self.compute.list_instances(self.compartment_id, name)['id']
-        res = self.compute.instance_action(vm_instance, 'START')
-        return res
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data[0]
+        if self.compute.get_instance(vm_instance.id).data.lifecycle_state in 'STOPPED':
+            self.compute.instance_action(vm_instance.id, 'START')
 
     def stop(self, name=None):
         """
@@ -692,9 +687,11 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return:  A list of dict representing the nodes
         """
 
-        vm_instance = self.compute.list_instances(self.compartment_id, name)['id']
-        res = self.compute.instance_action(vm_instance, 'SOFTSTOP')
-        return res
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data[0]
+        if self.compute.get_instance(
+                vm_instance.id).data.lifecycle_state in 'RUNNING':
+            self.compute.instance_action(vm_instance.id, 'SOFTSTOP')
 
     def pause(self, name=None):
         """
@@ -817,8 +814,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         :return: dict of vms
         """
-
-        return self.get_list(self.compute.list_instances(self.compartment_id).data, kind="vm")
+        vm_list = self.compute.list_instances(self.compartment_id).data
+        return self.get_list(vm_list, kind="vm")
 
     def destroy(self, name=None):
         """
@@ -933,15 +930,15 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         # get IP
 
-        if not ip and public:
-            ip = self.find_available_public_ip()
+        #if not ip and public:
+            #ip = self.find_available_public_ip()
             # pprint(entry)
 
-        elif ip is not None:
-            entry = self.list_public_ips(ip=ip, available=True)
-            if len(entry) == 0:
-                print("ip not available")
-                raise ValueError(f"The ip can not be assigned {ip}")
+        #elif ip is not None:
+            #entry = self.list_public_ips(ip=ip, available=True)
+            #if len(entry) == 0:
+                #print("ip not available")
+                #raise ValueError(f"The ip can not be assigned {ip}")
 
         if type(group) == str:
             groups = Parameter.expand(group)
