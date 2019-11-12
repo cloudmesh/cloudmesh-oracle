@@ -1,5 +1,6 @@
 import oci
 from cloudmesh.configuration.Config import Config
+from cloudmesh.oracle.compute.Provider import Provider
 
 # Initialize
 config_file = "~/.cloudmesh/cloudmesh.yaml"
@@ -7,6 +8,21 @@ config = Config(config_file)["cloudmesh"]["cloud"]["oracle"]["credentials"]
 compute = oci.core.ComputeClient(config)
 virtual_network = oci.core.VirtualNetworkClient(config)
 identity_client = oci.identity.IdentityClient(config)
+provider = Provider(name='oracle')
+
+# Test list public ips
+def test_list_ips():
+    ips = provider.list_public_ips()
+    print(ips)
+
+# Test create instance
+def test_create_instance():
+    provider.create(name='new_instance')
+
+# Test list public ips
+def test_list_public_ips():
+    x = provider.list_public_ips()
+    print(x)
 
 # Get server metadata
 def get_instance_metadata(vm_instance):
@@ -137,7 +153,7 @@ def create_vcn_and_subnet(virtual_network, compartment_id, availability_domain):
 
     # Create a subnet
     subnet_name = 'test_subnet'
-    subnet_cidr_block1 = "10.0.0.0/24"
+    subnet_cidr_block1 = "10.0.0.0/25"
     result_subnet = virtual_network.list_subnets(compartment_id, vcn.id, display_name=subnet_name).data
     if not result_subnet:
         result_subnet = virtual_network.create_subnet(
@@ -163,29 +179,31 @@ def create_vcn_and_subnet(virtual_network, compartment_id, availability_domain):
 
     return {'vcn': vcn, 'subnet': subnet}
 
-create_instance_details = oci.core.models.LaunchInstanceDetails()
-compartment_id = config["compartment_id"]
-create_instance_details.compartment_id = compartment_id
-availability_domain = get_availability_domain(identity_client, compartment_id)
-vcn_and_subnet = create_vcn_and_subnet(virtual_network, compartment_id, availability_domain.name)
-create_instance_details.availability_domain = availability_domain.name
-create_instance_details.display_name = 'test_instance'
-subnet = vcn_and_subnet['subnet']
-create_instance_details.create_vnic_details = oci.core.models.CreateVnicDetails(
-        subnet_id=subnet.id,
-        assign_public_ip=False
+
+def create_instance():
+    create_instance_details = oci.core.models.LaunchInstanceDetails()
+    compartment_id = config["compartment_id"]
+    create_instance_details.compartment_id = compartment_id
+    availability_domain = get_availability_domain(identity_client, compartment_id)
+    vcn_and_subnet = create_vcn_and_subnet(virtual_network, compartment_id, availability_domain.name)
+    create_instance_details.availability_domain = availability_domain.name
+    create_instance_details.display_name = 'test_instance'
+    subnet = vcn_and_subnet['subnet']
+    create_instance_details.create_vnic_details = oci.core.models.CreateVnicDetails(
+            subnet_id=subnet.id,
+            assign_public_ip=False
+        )
+    create_instance_details.image_id = get_image('Oracle-Linux-7.7-2019.08.28-0').id
+    create_instance_details.shape = 'VM.Standard.E2.1'
+
+    result = compute.launch_instance(create_instance_details)
+    instance_ocid = result.data.id
+
+    get_instance_response = oci.wait_until(
+        compute,
+        compute.get_instance(instance_ocid),
+        'lifecycle_state',
+        'RUNNING',
+        max_wait_seconds=600
     )
-create_instance_details.image_id = get_image('Oracle-Linux-7.7-2019.08.28-0').id
-create_instance_details.shape = 'VM.Standard.E2.1'
-
-result = compute.launch_instance(create_instance_details)
-instance_ocid = result.data.id
-
-get_instance_response = oci.wait_until(
-    compute,
-    compute.get_instance(instance_ocid),
-    'lifecycle_state',
-    'RUNNING',
-    max_wait_seconds=600
-)
-print('Launched instance')
+    print('Launched instance')

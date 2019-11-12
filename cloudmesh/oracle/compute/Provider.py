@@ -2,7 +2,6 @@ import oci
 
 import os
 import subprocess
-from ast import literal_eval
 from time import sleep
 from sys import platform
 import ctypes
@@ -16,7 +15,6 @@ from cloudmesh.common.util import path_expand
 from cloudmesh.common.variables import Variables
 from cloudmesh.common3.DictList import DictList
 from cloudmesh.configuration.Config import Config
-from cloudmesh.image.Image import Image
 from cloudmesh.mongo.CmDatabase import CmDatabase
 from cloudmesh.provider import ComputeProviderPlugin
 from cloudmesh.secgroup.Secgroup import Secgroup, SecgroupRule
@@ -34,8 +32,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         'STOPPED',
         'UNKNOWN'
     ]
-
-    ### TODO: THIS HAS TO BE CHANGED
 
     output = {
         "status": {
@@ -55,15 +51,15 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             "sort_keys": ["cm.name"],
             "order": ["cm.name",
                       "cm.cloud",
-                      "vm_state",
+                      "_lifecycle_state",
                       "status",
                       "task_state",
                       "metadata.image",
-                      "metadata.flavor",
+                      "_shape",
                       "ip_public",
                       "ip_private",
                       "project_id",
-                      "launched_at",
+                      "cm.created",
                       "cm.kind"],
             "header": ["Name",
                        "Cloud",
@@ -83,10 +79,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             "sort_keys": ["cm.name",
                           "extra.minDisk"],
             "order": ["cm.name",
-                      "size",
-                      "min_disk",
+                      "size_in_mbs",
+                      "size_in_mbs",
                       "min_ram",
-                      "status",
+                      "lifecycle_state",
                       "cm.driver"],
             "header": ["Name",
                        "Size (Bytes)",
@@ -291,7 +287,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                 entry['cm'] = {}
 
             if kind == 'ip':
-                entry['name'] = entry['floating_ip_address']
+                entry['name'] = entry['_ip_address']
 
             entry["cm"].update({
                 "kind": kind,
@@ -300,7 +296,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             })
 
             if kind == 'key':
-
                 try:
                     entry['comment'] = entry['public_key'].split(" ", 2)[2]
                 except:
@@ -309,7 +304,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                     entry['public_key'].split(" ", 1)[0].replace("ssh-", "")
 
             elif kind == 'vm':
-                print(entry)
                 entry['name'] = entry["cm"]["name"] = entry["_display_name"]
                 entry["cm"]["updated"] = str(DateTime.now())
                 entry["cm"]["created"] = str(entry["_time_created"])
@@ -398,15 +392,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: The name of the group, if None all will be returned
         :return:
         """
-        ### TODO: THIS HAS TO BE CHANGED
-        groups = self.cloudman.network.security_groups()
-
-        if name is not None:
-            for entry in groups:
-
-                if entry['name'] == name:
-                    groups = [entry]
-                    break
+        groups = self.virtual_network.list_network_security_groups(self.compartment_id, display_name=name).data
 
         return self.get_list(
             groups,
@@ -419,29 +405,26 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: The name of the group, if None all will be returned
         :return:
         """
-        ### TODO: THIS HAS TO BE CHANGED
         return self.list_secgroups(name=name)
 
-    def add_secgroup(self, name=None, description=None):
+    def add_secgroup(self, name=None, description=None, vcn_id=None):
         """
         Adds the
         :param name: Name of the group
         :param description: The description
         :return:
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
-        if self.cloudman:
-            if description is None:
-                description = name
-            try:
-                self.cloudman.create_security_group(name,
-                                                    description)
-            except:
-                Console.warning(f"secgroup {name} already exists in cloud. "
+        if description is None:
+            description = name
+        try:
+            details = oci.core.models.CreateNetworkSecurityGroupDetails(
+                compartment_id=self.compartment_id, display_name=name, vcn_id=vcn_id)
+            secgroup = self.virtual_network.create_network_security_group(details)
+            return secgroup.data
+        except:
+            Console.warning(f"secgroup {name} already exists in cloud. "
                                 f"skipping.")
-        else:
-            raise ValueError("cloud not initialized")
 
     def add_secgroup_rule(self,
                           name=None,  # group name
@@ -454,28 +437,33 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param description: The description
         :return:
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
-        if self.cloudman:
-            try:
-                portmin, portmax = port.split(":")
-            except:
-                portmin = None
-                portmax = None
+        try:
+            portmin, portmax = port.split(":")
+        except:
+            portmin = None
+            portmax = None
 
-            self.cloudman.create_security_group_rule(
-                name,
+        sec_group = self.list_secgroups(name).id
+        rule_details = oci.core.models.AddSecurityRuleDetails(
+            direction='ingress', protocol=protocol)
+        details = oci.core.models.AddNetworkSecurityGroupSecurityRulesDetails(
+            [].append(rule_details))
+        self.virtual_network.add_network_security_group_security_rules(
+            sec_group, details)
+
+        '''
+        self.virtual_network.add_network_security_group_security_rules(
+                sec_group, details, 
                 port_range_min=portmin,
                 port_range_max=portmax,
-                protocol=protocol,
+                
                 remote_ip_prefix=ip_range,
                 remote_group_id=None,
-                direction='ingress',
+                
                 ethertype='IPv4',
                 project_id=None)
-
-        else:
-            raise ValueError("cloud not initialized")
+        '''
 
     def remove_secgroup(self, name=None):
         """
@@ -484,14 +472,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: The name
         :return:
         """
-        ### TODO: THIS HAS TO BE CHANGED
-
-        if self.cloudman:
-            self.cloudman.delete_security_group(name)
-            g = self.list_secgroups(name=name)
-            return len(g) == 0
-        else:
-            raise ValueError("cloud not initialized")
+        sec_group = self.list_secgroups(name).data
+        self.virtual_network.delete_network_security_group(sec_group.id)
+        sec_group = self.list_secgroups(name)
+        return len(sec_group) == 0
 
     def upload_secgroup(self, name=None):
         ### TODO: THIS HAS TO BE CHANGED
@@ -542,7 +526,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
     # ok
     def add_rules_to_secgroup(self, name=None, rules=None):
-        ### TODO: THIS HAS TO BE CHANGED
 
         if name is None and rules is None:
             raise ValueError("name or rules are None")
@@ -646,7 +629,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return: the dict of the image
         """
 
-        return self.compute.list_images(self.compartment_id, display_name=name)
+        img = self.compute.list_images(self.compartment_id, display_name=name)
+        return img.data[0]
 
     def flavors(self):
         """
@@ -728,20 +712,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: The name of the virtual machine
         :return: The dict representing the node including updated status
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
-        data = self.cloudman.list_servers(filters={'name': name})
-
-        """
-        vms = self.list()
-        print ("VMS", vms)
-        data = None
-        for entry in vms:
-            print ("FFF", entry['name'])
-            if entry['name'] == name:
-                data = entry
-                break
-        """
+        data = self.compute.list_instances(self.compartment_id, display_name=name).data
 
         if data is None:
             raise ValueError(f"vm not found {name}")
@@ -751,10 +723,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
     def status(self, name=None):
 
-        ### TODO: THIS HAS TO BE CHANGED
-
-        r = self.cloudman.list_servers(filters={'name': name})[0]
-        return r['status']
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data[0]
+        r = self.compute.get_instance(vm_instance.id).data
+        return r.lifecycle_state
 
     def suspend(self, name=None):
         """
@@ -773,30 +745,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         return r
 
-        """
-        raise NotImplementedError
-
-        #
-        # BUG THIS CODE DOES NOT WORK
-        #
-        nodes = self.list()
-        for node in nodes:
-            if node.name == name:
-                r = self.cloudman.ex_stop_node(self._get_node(node.name),
-                                               deallocate=False)
-                # print(r)
-                # BUG THIS IS NOT A DICT
-                return(node, name=name)
-                self.cloudman.destroy_node(node)
-
-        #
-        # should return the updated names dict, e.g. status and so on
-        # the above specification is for one name
-        #
-        
-        return None
-        """
-
     def resume(self, name=None):
         """
         resume a stopped node.
@@ -804,8 +752,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: the name of the node
         :return: the dict of the node
         """
-        vm_instance = self.compute.list_instances(self.compartment_id, name)['id']
-        res = self.compute.instance_action(vm_instance, 'START')
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data[0]
+        res = self.compute.instance_action(vm_instance.id, 'START')
         return res
 
     def list(self):
@@ -823,9 +772,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: the name of the node
         :return: the dict of the node
         """
-        vm_instance = self.compute.list_instances(self.compartment_id, name)
-        r = self.compute.terminate_instance(vm_instance['id'])
-        vm_instance['status'] = 'DELETED'
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data[0]
+        r = self.compute.terminate_instance(vm_instance.id)
 
         servers = self.update_dict([vm_instance], kind='vm')
         return servers
@@ -838,8 +787,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return:  A list of dict representing the nodes
         """
 
-        vm_instance = self.compute.list_instances(self.compartment_id, name)
-        res = self.compute.instance_action(vm_instance, 'SOFTRESET')
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data[0]
+        res = self.compute.instance_action(vm_instance.id, 'SOFTRESET')
         return res
 
     def set_server_metadata(self, name, cm):
@@ -850,42 +800,98 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param cm: The cm dict
         :return:
         """
-        ### TODO: THIS HAS TO BE CHANGED
 
         data = {'cm': str(cm)}
-        server = self.cloudman.get_server(name)
-        self.cloudman.set_server_metadata(server, data)
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data[0]
+        self.compute.get_instance(vm_instance.id).data.metadata = data
 
     def get_server_metadata(self, name):
-        ### TODO: THIS HAS TO BE CHANGED
-
-        server = self.info(name=name)
-        m = self.cloudman.get_server_meta(server)
-        data = dict(m['server_vars']['metadata'])
-        return data
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data[0]
+        info = self.compute.get_instance(vm_instance.id).data
+        return info.metadata
 
     def delete_server_metadata(self, name, key):
-        ### TODO: THIS HAS TO BE CHANGED
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data[0]
+        info = self.compute.get_instance(vm_instance.id).data
+        info.metadata={}
+        return info.metadata
 
-        server = self.info(name=name)
-        m = self.cloudman.delete_server_metadata(server, key)
-        m = self.cloudman.get_server_meta(server)
-        data = dict(m['server_vars']['metadata'])
-        return data
+    def get_availability_domain(self):
+        availability_domain = \
+        self.identity_client.list_availability_domains(self.compartment_id).data[0]
+        return availability_domain
+
+    def create_vcn_and_subnet(self, virtual_network, availability_domain):
+        # Create a VCN
+        vcn_name = 'test_vcn'
+        cidr_block = "11.0.0.0/16"
+        '''
+        result = virtual_network.list_vcns(self.compartment_id,
+                                           display_name=vcn_name).data
+
+        if not result:
+        '''
+        vcn_details = oci.core.models.CreateVcnDetails(
+                cidr_block=cidr_block, display_name=vcn_name,
+                compartment_id=self.compartment_id)
+        result = virtual_network.create_vcn(vcn_details).data
+        #else:
+            #result = result[0]
+
+        vcn = oci.wait_until(
+            virtual_network,
+            virtual_network.get_vcn(result.id),
+            'lifecycle_state',
+            'AVAILABLE',
+            max_wait_seconds=300
+        ).data
+        print('Created VCN')
+
+        # Create a subnet
+        subnet_name = 'test_subnet'
+        subnet_cidr_block1 = "11.0.0.0/25"
+        #result_subnet = virtual_network.list_subnets(self.compartment_id, vcn.id,
+        #                                             display_name=subnet_name).data
+        #if not result_subnet:
+        result_subnet = virtual_network.create_subnet(
+                oci.core.models.CreateSubnetDetails(
+                    compartment_id=self.compartment_id,
+                    availability_domain=availability_domain,
+                    display_name=subnet_name,
+                    vcn_id=vcn.id,
+                    cidr_block=subnet_cidr_block1
+                )
+            ).data
+        #else:
+            #result_subnet = result_subnet[0]
+
+        subnet = oci.wait_until(
+            virtual_network,
+            virtual_network.get_subnet(result_subnet.id),
+            'lifecycle_state',
+            'AVAILABLE',
+            max_wait_seconds=300
+        ).data
+        print('Created subnet')
+
+        return {'vcn': vcn, 'subnet': subnet}
 
     def create(self,
                name=None,
                image=None,
                size=None,
-               location=None,
+               location=None, #
                timeout=360,
                key=None,
                secgroup=None,
-               ip=None,
-               user=None,
+               ip=None, #
+               user=None, #why req
                public=True,
-               group=None,
-               metadata=None,
+               group=None, #what group
+               metadata=None, #
                cloud=None,
                **kwargs):
         """
@@ -902,31 +908,14 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                        boot
         :return:
         """
-        image_use = None
-        flavor_use = None
 
         # keyname = Config()["cloudmesh"]["profile"]["user"]
         # ex_keyname has to be the registered keypair name in cloud
 
-        """
-        https://docs.openstack.org/openstacksdk/latest/user/connection.html#openstack.connection.Connection.create_server
-
-        """
-
-        if 'flavor' in kwargs and size is None:
-            size = kwargs['flavor']
-
         # Guess user name
 
-        if user is None:
-            user = Image.guess_username(image)
-            # image_name = image.lower()
-            # if image_name.startswith("cc-"):
-            #    user = "cc"
-            # if "centos" in image_name:
-            #    user = "centos"
-            # elif "ubuntu" in image_name:
-            #    user = "ubuntu"
+        #if user is None:
+            #user = Image.guess_username(image)
 
         # get IP
 
@@ -942,6 +931,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         if type(group) == str:
             groups = Parameter.expand(group)
+        else:
+            groups = None
 
         banner("Create Server")
         print("    Name:    ", name)
@@ -959,31 +950,64 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         print()
 
         try:
-            ### TODO: THIS HAS TO BE CHANGED
+            create_instance_details = oci.core.models.LaunchInstanceDetails()
+            create_instance_details.compartment_id = self.compartment_id
+            availability_domain = self.get_availability_domain()
 
-            server = self.cloudman.create_server(name,
-                                                 flavor=size,
-                                                 image=image,
-                                                 key_name=key,
-                                                 security_groups=[secgroup],
-                                                 timeout=timeout
-                                                 # tags=groups,
-                                                 # wait=True
-                                                 )
-            server['user'] = user
-            r = self.cloudman.wait_for_server(server)
-            s = self.cloudman.add_ips_to_server(server, ips=ip)
+            vcn_and_subnet = self.create_vcn_and_subnet(self.virtual_network,
+                                                        availability_domain.name)
+
+            if secgroup is not None:
+                #s = self.list_secgroups(secgroup)
+                #if (len(s) == 0):
+                    s = self.add_secgroup(secgroup, secgroup, vcn_and_subnet['vcn'].id)
+                    s_id = s.id
+                #else:
+                    #s_id = s[0]['_id']
+
+            create_instance_details.availability_domain = availability_domain.name
+            create_instance_details.display_name = name
+
+            if (secgroup is not None):
+                nsgs = []
+                nsgs.append(s_id)
+            else:
+                nsgs = None
+
+            subnet = vcn_and_subnet['subnet']
+            create_instance_details.create_vnic_details = oci.core.models.CreateVnicDetails(
+                nsg_ids=nsgs,
+                subnet_id=subnet.id,
+                assign_public_ip=public
+            )
+
+            create_instance_details.image_id = self.image(image).id
+            create_instance_details.shape = size
+
+            if metadata is not None:
+                create_instance_details.metadata = metadata
+
+            result = self.compute.launch_instance(create_instance_details)
+            instance_ocid = result.data.id
+
+            get_instance_response = oci.wait_until(
+                self.compute,
+                self.compute.get_instance(instance_ocid),
+                'lifecycle_state',
+                'RUNNING',
+                max_wait_seconds=600
+            )
+            print('Launched instance')
+
+            #s = self.cloudman.add_ips_to_server(server, ips=ip)
             variables = Variables()
             variables['vm'] = name
-            if metadata is None:
-                metadata = {}
 
-            metadata['image'] = image
-            metadata['flavor'] = size
 
-            self.cloudman.set_server_metadata(server, metadata)
 
-            self.add_secgroup(name=secgroup)
+            #self.cloudman.set_server_metadata(server, metadata)
+
+            #self.add_secgroup(name=secgroup)
 
             # server = self.cloudman.compute.wait_for_server(server)
 
@@ -996,44 +1020,32 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             print(e)
             raise RuntimeError
 
-        return self.update_dict(server, kind="vm")[0]
+        vm_instance = self.compute.get_instance(instance_ocid).data.__dict__;
+        print(vm_instance)
+        return self.update_dict(vm_instance, kind="vm")[0]
 
     # ok
     def list_public_ips(self,
                         ip=None,
                         available=False):
 
+        ips = self.virtual_network.list_public_ips("REGION",
+                                                   self.compartment_id).data
         if ip is not None:
-            ### TODO: THIS HAS TO BE CHANGED
+            for ip_names in ips:
+                if ip_names["name"] == ip:
+                    ips = ip
+                    break
 
-            ips = self.cloudman.list_floating_ips({'floating_ip_address': ip})
-        else:
-            ### TODO: THIS HAS TO BE CHANGED
-
-            ips = self.cloudman.list_floating_ips()
-            if available:
-                found = []
-                for entry in ips:
-                    if entry['fixed_ip_address'] is None:
-                        found.append(entry)
-                ips = found
-
-        return self.update_dict(ips, kind="ip")
+        return self.get_list(ips, kind="ip")
 
     # ok
     def delete_public_ip(self, ip=None):
         try:
-            if ip is None:
-                ### TODO: THIS HAS TO BE CHANGED
+            ips = self.list_public_ips(ip)
 
-                ips = self.cloudman.list_floating_ips(available=True)
-            else:
-                ### TODO: THIS HAS TO BE CHANGED
-
-                ips = self.cloudman.list_floating_ips(
-                    {'floating_ip_address': ip})
             for _ip in ips:
-                r = self.cloudman.delete_floating_ip(_ip['id'])
+                r = self.virtual_network.delete_public_ip(ip['id'])
         except:
             pass
 
@@ -1041,14 +1053,14 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
     def create_public_ip(self):
         ### TODO: THIS HAS TO BE CHANGED
 
-        return self.cloudman.create_floating_ip()
+        return self.compute
 
     # ok
     def find_available_public_ip(self):
         ### TODO: THIS HAS TO BE CHANGED
 
         entry = self.cloudman.available_floating_ip()
-        ip = entry['floating_ip_address']
+        ip = entry['_ip_address']
         return ip
 
     # ok
@@ -1118,12 +1130,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         # same as console!!!!
         server = vm['id']
-        return self.cloudman._get_server_console_output(server)
+        return self.compute._get_server_console_output(server)
 
 
     def rename(self, name=None, destination=None):
-        ### TODO: THIS HAS TO BE CHANGED
-
         """
         rename a node. NOT YET IMPLEMENTED.
 
@@ -1131,16 +1141,14 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: the current name
         :return: the dict with the new name
         """
-        raise NotImplementedError
-        return None
+        details = oci.core.models.UpdateInstanceDetails()
+        details.display_name = name
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data[0]
+        self.compute.update_instance(vm_instance.id, details)
 
     def ssh(self, vm=None, command=None):
-        #
-        # TODO: fix user name issue, should be stored in db
-        #
-
-        # VERBOSE(vm)
-
+        print("000")
         ip = vm['ip_public']
         key_name = vm['key_name']
         image = vm['metadata']['image']
@@ -1170,7 +1178,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
               f"-i {key} {location} {command}"
         cmd = cmd.strip()
         # VERBOSE(cmd)
-
         if command == "":
             if platform.lower() == 'win32':
                 class disable_file_system_redirection:
