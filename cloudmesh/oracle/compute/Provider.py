@@ -52,9 +52,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             "order": ["cm.name",
                       "cm.cloud",
                       "_lifecycle_state",
-                      "status",
+                      "_lifecycle_state",
                       "task_state",
-                      "metadata.image",
+                      "_image",
                       "_shape",
                       "ip_public",
                       "ip_private",
@@ -228,16 +228,17 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         self.cred = self.config[f"cloudmesh.cloud.{name}.credentials"]
 
         fields = ["user",
-        "fingerprint",
-        "key_file",
-        "pass_phrase",
-        "tenancy",
-        "compartment_id",
-        "region"]
+                  "fingerprint",
+                  "key_file",
+                  "pass_phrase",
+                  "tenancy",
+                  "compartment_id",
+                  "region"]
 
         for field in fields:
             if self.cred[field] == 'TBD':
-                Console.error(f"The credential for Oracle cloud is incomplete. {field} must not be TBD")
+                Console.error(
+                    f"The credential for Oracle cloud is incomplete. {field} must not be TBD")
         self.credential = self._get_credentials(self.cred)
 
         self.compute = oci.core.ComputeClient(self.credential)
@@ -305,6 +306,21 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
             elif kind == 'vm':
                 entry['name'] = entry["cm"]["name"] = entry["_display_name"]
+                entry['_image'] = self.compute.get_image(
+                    entry['_image_id']).data.display_name
+
+                vnic = self.compute.list_vnic_attachments(
+                    self.compartment_id, instance_id=entry['_id']).data[0]
+                private = self.virtual_network.list_private_ips(
+                    subnet_id=vnic.subnet_id).data[0]
+                details = oci.core.models.GetPublicIpByPrivateIpIdDetails(
+                    private_ip_id=private.id)
+                public = self.virtual_network.get_public_ip_by_private_ip_id(
+                    details).data
+
+                if public:
+                    entry['ip_public'] = public.ip_address
+                entry['ip_private'] = private.ip_address
                 entry["cm"]["updated"] = str(DateTime.now())
                 entry["cm"]["created"] = str(entry["_time_created"])
                 entry["cm"]["status"] = str(entry["_lifecycle_state"])
@@ -339,6 +355,14 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             if element["name"] == name or element["cm"]["name"] == name:
                 return element
         return None
+
+    def get_instance(self, name):
+        vm_instance = self.compute.list_instances(self.compartment_id,
+                                                  display_name=name).data
+        if vm_instance:
+            return vm_instance[0]
+        else:
+            return None
 
     def keys(self):
         """
@@ -392,7 +416,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: The name of the group, if None all will be returned
         :return:
         """
-        groups = self.virtual_network.list_network_security_groups(self.compartment_id, display_name=name).data
+        groups = self.virtual_network.list_network_security_groups(
+            self.compartment_id, display_name=name).data
 
         return self.get_list(
             groups,
@@ -419,12 +444,14 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             description = name
         try:
             details = oci.core.models.CreateNetworkSecurityGroupDetails(
-                compartment_id=self.compartment_id, display_name=name, vcn_id=vcn_id)
-            secgroup = self.virtual_network.create_network_security_group(details)
+                compartment_id=self.compartment_id, display_name=name,
+                vcn_id=vcn_id)
+            secgroup = self.virtual_network.create_network_security_group(
+                details)
             return secgroup.data
         except:
             Console.warning(f"secgroup {name} already exists in cloud. "
-                                f"skipping.")
+                            f"skipping.")
 
     def add_secgroup_rule(self,
                           name=None,  # group name
@@ -556,7 +583,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
     def remove_rules_from_secgroup(self, name=None, rules=None):
         ### TODO: THIS HAS TO BE CHANGED
 
-
         if name is None and rules is None:
             raise ValueError("name or rules are None")
 
@@ -616,9 +642,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
     def images(self, **kwargs):
         """
         Lists the images on the cloud
-        :return: dict or libcloud object
+        :return: dict object
         """
-
         d = self.compute.list_images(self.compartment_id).data
         return self.get_list(d, kind="image")
 
@@ -658,9 +683,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return:  A list of dict representing the nodes
         """
 
-        vm_instance = self.compute.list_instances(self.compartment_id,
-                                                  display_name=name).data[0]
-        if self.compute.get_instance(vm_instance.id).data.lifecycle_state in 'STOPPED':
+        vm_instance = self.get_instance(name)
+        if self.compute.get_instance(
+                vm_instance.id).data.lifecycle_state in 'STOPPED':
             self.compute.instance_action(vm_instance.id, 'START')
 
     def stop(self, name=None):
@@ -671,8 +696,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return:  A list of dict representing the nodes
         """
 
-        vm_instance = self.compute.list_instances(self.compartment_id,
-                                                  display_name=name).data[0]
+        vm_instance = self.get_instance(name)
         if self.compute.get_instance(
                 vm_instance.id).data.lifecycle_state in 'RUNNING':
             self.compute.instance_action(vm_instance.id, 'SOFTSTOP')
@@ -684,12 +708,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: A list of node name
         :return:  A list of dict representing the nodes
         """
-        ### TODO: THIS HAS TO BE CHANGED
-
-        server = self.cloudman.get_server(name)['id']
-        r = self.cloudman.compute.pause_server(server)
-
-        return r
+        print("Pause is not supported in Oracle")
 
     def unpause(self, name=None):
         """
@@ -698,12 +717,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: A list of node name
         :return:  A list of dict representing the nodes
         """
-        ### TODO: THIS HAS TO BE CHANGED
-
-        server = self.cloudman.get_server(name)['id']
-        r = self.cloudman.compute.unpause_server(server)
-
-        return r
+        print("Un-Pause is not supported in Oracle")
 
     def info(self, name=None):
         """
@@ -712,19 +726,17 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: The name of the virtual machine
         :return: The dict representing the node including updated status
         """
-
-        data = self.compute.list_instances(self.compartment_id, display_name=name).data
+        data = self.get_instance(name)
 
         if data is None:
             raise ValueError(f"vm not found {name}")
 
-        r = self.update_dict(data, kind="vm")
+        r = self.update_dict([data], kind="vm")
         return r
 
     def status(self, name=None):
 
-        vm_instance = self.compute.list_instances(self.compartment_id,
-                                                  display_name=name).data[0]
+        vm_instance = self.get_instance(name)
         r = self.compute.get_instance(vm_instance.id).data
         return r.lifecycle_state
 
@@ -752,8 +764,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: the name of the node
         :return: the dict of the node
         """
-        vm_instance = self.compute.list_instances(self.compartment_id,
-                                                  display_name=name).data[0]
+        vm_instance = self.get_instance(name)
         res = self.compute.instance_action(vm_instance.id, 'START')
         return res
 
@@ -772,8 +783,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: the name of the node
         :return: the dict of the node
         """
-        vm_instance = self.compute.list_instances(self.compartment_id,
-                                                  display_name=name).data[0]
+        vm_instance = self.get_instance(name)
         r = self.compute.terminate_instance(vm_instance.id)
 
         servers = self.update_dict([vm_instance], kind='vm')
@@ -787,8 +797,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return:  A list of dict representing the nodes
         """
 
-        vm_instance = self.compute.list_instances(self.compartment_id,
-                                                  display_name=name).data[0]
+        vm_instance = self.get_instance(name)
         res = self.compute.instance_action(vm_instance.id, 'SOFTRESET')
         return res
 
@@ -802,61 +811,58 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         """
 
         data = {'cm': str(cm)}
-        vm_instance = self.compute.list_instances(self.compartment_id,
-                                                  display_name=name).data[0]
+        vm_instance = self.get_instance(name)
         self.compute.get_instance(vm_instance.id).data.metadata = data
 
     def get_server_metadata(self, name):
-        vm_instance = self.compute.list_instances(self.compartment_id,
-                                                  display_name=name).data[0]
-        info = self.compute.get_instance(vm_instance.id).data
-        return info.metadata
+        vm_instance = self.get_instance(name)
+        return vm_instance.metadata
 
     def delete_server_metadata(self, name, key):
-        vm_instance = self.compute.list_instances(self.compartment_id,
-                                                  display_name=name).data[0]
-        info = self.compute.get_instance(vm_instance.id).data
-        info.metadata={}
-        return info.metadata
+        vm_instance = self.get_instance(name)
+        vm_instance.metadata = {}
+        return vm_instance.metadata
 
     def get_availability_domain(self):
         availability_domain = \
-        self.identity_client.list_availability_domains(self.compartment_id).data[0]
+            self.identity_client.list_availability_domains(
+                self.compartment_id).data[0]
         return availability_domain
 
     def create_vcn_and_subnet(self, virtual_network, availability_domain):
-        # Create a VCN
-        vcn_name = 'test_vcn'
-        cidr_block = "11.0.0.0/16"
-        '''
-        result = virtual_network.list_vcns(self.compartment_id,
-                                           display_name=vcn_name).data
-
-        if not result:
-        '''
-        vcn_details = oci.core.models.CreateVcnDetails(
+        try:
+            # Create a VCN
+            vcn_name = 'test_vcn'
+            cidr_block = "11.0.0.0/16"
+            '''
+            result = virtual_network.list_vcns(self.compartment_id,
+                                               display_name=vcn_name).data
+    
+            if not result:
+            '''
+            vcn_details = oci.core.models.CreateVcnDetails(
                 cidr_block=cidr_block, display_name=vcn_name,
                 compartment_id=self.compartment_id)
-        result = virtual_network.create_vcn(vcn_details).data
-        #else:
-            #result = result[0]
+            result = virtual_network.create_vcn(vcn_details).data
+            # else:
+            # result = result[0]
 
-        vcn = oci.wait_until(
-            virtual_network,
-            virtual_network.get_vcn(result.id),
-            'lifecycle_state',
-            'AVAILABLE',
-            max_wait_seconds=300
-        ).data
-        print('Created VCN')
+            vcn = oci.wait_until(
+                virtual_network,
+                virtual_network.get_vcn(result.id),
+                'lifecycle_state',
+                'AVAILABLE',
+                max_wait_seconds=300
+            ).data
+            print('Created VCN')
 
-        # Create a subnet
-        subnet_name = 'test_subnet'
-        subnet_cidr_block1 = "11.0.0.0/25"
-        #result_subnet = virtual_network.list_subnets(self.compartment_id, vcn.id,
-        #                                             display_name=subnet_name).data
-        #if not result_subnet:
-        result_subnet = virtual_network.create_subnet(
+            # Create a subnet
+            subnet_name = 'test_subnet'
+            subnet_cidr_block1 = "11.0.0.0/25"
+            # result_subnet = virtual_network.list_subnets(self.compartment_id, vcn.id,
+            #                                             display_name=subnet_name).data
+            # if not result_subnet:
+            result_subnet = virtual_network.create_subnet(
                 oci.core.models.CreateSubnetDetails(
                     compartment_id=self.compartment_id,
                     availability_domain=availability_domain,
@@ -865,33 +871,72 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                     cidr_block=subnet_cidr_block1
                 )
             ).data
-        #else:
-            #result_subnet = result_subnet[0]
+            # else:
+            # result_subnet = result_subnet[0]
 
-        subnet = oci.wait_until(
-            virtual_network,
-            virtual_network.get_subnet(result_subnet.id),
-            'lifecycle_state',
-            'AVAILABLE',
-            max_wait_seconds=300
-        ).data
-        print('Created subnet')
+            subnet = oci.wait_until(
+                virtual_network,
+                virtual_network.get_subnet(result_subnet.id),
+                'lifecycle_state',
+                'AVAILABLE',
+                max_wait_seconds=300
+            ).data
+            print('Created subnet')
 
-        return {'vcn': vcn, 'subnet': subnet}
+            # Create an internet gateway
+            result_gateway = virtual_network.create_internet_gateway(
+                oci.core.models.CreateInternetGatewayDetails(
+                    compartment_id=self.compartment_id,
+                    display_name='test_gateway',
+                    is_enabled=True,
+                    vcn_id=vcn.id
+                )
+            ).data
+
+            gateway = oci.wait_until(
+                virtual_network,
+                virtual_network.get_internet_gateway(result_gateway.id),
+                'lifecycle_state',
+                'AVAILABLE',
+                max_wait_seconds=300
+            ).data
+            print('Created gateway')
+
+            route_rules = []
+            route_rules.append(oci.core.models.RouteRule(
+                destination='0.0.0.0/0', network_entity_id=result_gateway.id))
+
+            new_vcn = virtual_network.get_vcn(vcn.id).data
+            route_table_id = new_vcn.default_route_table_id
+            route_table = virtual_network.get_route_table(route_table_id).data
+            virtual_network.update_route_table(route_table.id,
+                                               oci.core.models.UpdateRouteTableDetails(
+                                                   route_rules=route_rules
+                                               ))
+
+            return {'vcn': vcn, 'subnet': subnet}
+
+        except:
+            if subnet is not None:
+                virtual_network.delete_subnet(subnet.id)
+            if gateway is not None:
+                virtual_network.delete_internet_gateway(gateway.id)
+            if vcn is not None:
+                virtual_network.delete_vcn(vcn.id)
 
     def create(self,
                name=None,
                image=None,
                size=None,
-               location=None, #
+               location=None,
                timeout=360,
                key=None,
                secgroup=None,
-               ip=None, #
-               user=None, #why req
+               ip=None,
+               user=None,
                public=True,
-               group=None, #what group
-               metadata=None, #
+               group=None,
+               metadata=None,
                cloud=None,
                **kwargs):
         """
@@ -909,25 +954,19 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return:
         """
 
-        # keyname = Config()["cloudmesh"]["profile"]["user"]
-        # ex_keyname has to be the registered keypair name in cloud
+        # user is 'opc' for oracle linux and windows based systems and
+        # otherwise ubuntu
+        if user is None:
+            user = Image.guess_username(image)
 
-        # Guess user name
-
-        #if user is None:
-            #user = Image.guess_username(image)
-
-        # get IP
-
-        #if not ip and public:
-            #ip = self.find_available_public_ip()
-            # pprint(entry)
-
-        #elif ip is not None:
-            #entry = self.list_public_ips(ip=ip, available=True)
-            #if len(entry) == 0:
-                #print("ip not available")
-                #raise ValueError(f"The ip can not be assigned {ip}")
+        '''
+        # get IP - no way to assign while creating instance in oracle
+        if ip is not None:
+            entry = self.list_public_ips(ip=ip, available=True)
+            if len(entry) == 0:
+                print("ip not available")
+                raise ValueError(f"The ip can not be assigned {ip}")
+        '''
 
         if type(group) == str:
             groups = Parameter.expand(group)
@@ -958,12 +997,13 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                                                         availability_domain.name)
 
             if secgroup is not None:
-                #s = self.list_secgroups(secgroup)
-                #if (len(s) == 0):
-                    s = self.add_secgroup(secgroup, secgroup, vcn_and_subnet['vcn'].id)
-                    s_id = s.id
-                #else:
-                    #s_id = s[0]['_id']
+                # s = self.list_secgroups(secgroup)
+                # if (len(s) == 0):
+                s = self.add_secgroup(secgroup, secgroup,
+                                      vcn_and_subnet['vcn'].id)
+                s_id = s.id
+            # else:
+            # s_id = s[0]['_id']
 
             create_instance_details.availability_domain = availability_domain.name
             create_instance_details.display_name = name
@@ -984,8 +1024,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             create_instance_details.image_id = self.image(image).id
             create_instance_details.shape = size
 
-            if metadata is not None:
-                create_instance_details.metadata = metadata
+            key_file = open(key, "r")
+            create_instance_details.metadata = {
+                "ssh_authorized_keys": key_file.read()}
 
             result = self.compute.launch_instance(create_instance_details)
             instance_ocid = result.data.id
@@ -999,21 +1040,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             )
             print('Launched instance')
 
-            #s = self.cloudman.add_ips_to_server(server, ips=ip)
             variables = Variables()
             variables['vm'] = name
-
-
-
-            #self.cloudman.set_server_metadata(server, metadata)
-
-            #self.add_secgroup(name=secgroup)
-
-            # server = self.cloudman.compute.wait_for_server(server)
-
-            # print("ssh -i {key} root@{ip}".format(
-            #    key=PRIVATE_KEYPAIR_FILE,
-            #    ip=server.access_ipv4))
 
         except Exception as e:
             Console.error("Problem starting vm", traceflag=True)
@@ -1021,7 +1049,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             raise RuntimeError
 
         vm_instance = self.compute.get_instance(instance_ocid).data.__dict__;
-        print(vm_instance)
         return self.update_dict(vm_instance, kind="vm")[0]
 
     # ok
@@ -1033,9 +1060,16 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                                                    self.compartment_id).data
         if ip is not None:
             for ip_names in ips:
-                if ip_names["name"] == ip:
-                    ips = ip
+                if ip_names.display_name == ip:
+                    ips = [ip_names]
                     break
+
+        if available:
+            available_lists = []
+            for ip_names in ips:
+                if ip_names.lifecycle_state == 'AVAILABLE':
+                    available_lists.append(ip_names)
+            ips = available_lists
 
         return self.get_list(ips, kind="ip")
 
@@ -1051,24 +1085,31 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
     # ok
     def create_public_ip(self):
-        ### TODO: THIS HAS TO BE CHANGED
-
-        return self.compute
+        details = oci.core.models.CreatePublicIpDetails(
+            compartment_id=self.compartment_id, display_name="test_ip",
+            lifetime="RESERVED")
+        return self.virtual_network.create_public_ip(details)
 
     # ok
     def find_available_public_ip(self):
-        ### TODO: THIS HAS TO BE CHANGED
+        ips = self.virtual_network.list_public_ips("REGION",
+                                                   self.compartment_id).data
+        available = None
+        for ip_names in ips:
+            if ip_names.lifecycle_state == 'AVAILABLE':
+                available = ip_names.ip_address
+                break;
 
-        entry = self.cloudman.available_floating_ip()
-        ip = entry['_ip_address']
-        return ip
+        return available
 
     # ok
     def attach_public_ip(self, name=None, ip=None):
         ### TODO: THIS HAS TO BE CHANGED
-
-        server = self.cloudman.get_server(name)
-        return self.cloudman.add_ips_to_server(server, ips=ip)
+        server = self.get_instance(name)
+        self.virtual_network.update_vnic()
+        self.compute.attach_vnic()
+        print(server)
+        server.vnic.create_public_ip = False
 
     # ok
     def detach_public_ip(self, name=None, ip=None):
@@ -1084,19 +1125,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
     def get_public_ip(self,
                       server=None,
                       name=None):
-        ### TODO: THIS HAS TO BE CHANGED
-
         if not server:
             server = self.info(name=name)
         ip = None
-        ips = server['addresses']
-        first = list(ips.keys())[0]
-        addresses = ips[first]
-
-        for address in addresses:
-            if address['OS-EXT-IPS:type'] == 'floating':
-                ip = address['addr']
-                break
         return ip
 
     # ok
@@ -1120,18 +1151,22 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         return found
 
     def console(self, vm=None):
-        ### TODO: THIS HAS TO BE CHANGED
-
-        server = vm['id']
-        return self.cloudman.get_server_console(server=server)
+        return self.log(server=vm)
 
     def log(self, vm=None):
-        ### TODO: THIS HAS TO BE CHANGED
-
-        # same as console!!!!
-        server = vm['id']
-        return self.compute._get_server_console_output(server)
-
+        instance = self.get_instance(vm)
+        details = oci.core.models.CaptureConsoleHistoryDetails(
+            instance_id=instance.id)
+        captured_history = self.compute.capture_console_history(details).data
+        oci.wait_until(
+            self.compute,
+            self.compute.get_console_history(captured_history.id),
+            'lifecycle_state',
+            'SUCCEEDED',
+            max_wait_seconds=600
+        )
+        return self.compute.get_console_history_content(
+            captured_history.id).data
 
     def rename(self, name=None, destination=None):
         """
@@ -1143,20 +1178,20 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         """
         details = oci.core.models.UpdateInstanceDetails()
         details.display_name = name
-        vm_instance = self.compute.list_instances(self.compartment_id,
-                                                  display_name=name).data[0]
+        vm_instance = self.get_instance(name)
         self.compute.update_instance(vm_instance.id, details)
 
     def ssh(self, vm=None, command=None):
-        print("000")
         ip = vm['ip_public']
-        key_name = vm['key_name']
-        image = vm['metadata']['image']
+        key_name = vm['name']
+        image = vm['_image']
         user = Image.guess_username(image)
+        print(key_name)
 
         cm = CmDatabase()
 
         keys = cm.find_all_by_name(name=key_name, kind="key")
+        print("KEYS: ", keys)
         for k in keys:
             if 'location' in k.keys():
                 if 'private' in k['location'].keys():
@@ -1186,11 +1221,13 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
                     def __enter__(self):
                         self.old_value = ctypes.c_long()
-                        self.success = self._disable(ctypes.byref(self.old_value))
+                        self.success = self._disable(
+                            ctypes.byref(self.old_value))
 
                     def __exit__(self, type, value, traceback):
                         if self.success:
                             self._revert(self.old_value)
+
                 with disable_file_system_redirection():
                     os.system(cmd)
             else:
@@ -1203,11 +1240,13 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
                     def __enter__(self):
                         self.old_value = ctypes.c_long()
-                        self.success = self._disable(ctypes.byref(self.old_value))
+                        self.success = self._disable(
+                            ctypes.byref(self.old_value))
 
                     def __exit__(self, type, value, traceback):
                         if self.success:
                             self._revert(self.old_value)
+
                 with disable_file_system_redirection():
                     ssh = subprocess.Popen(cmd,
                                            shell=True,
@@ -1215,9 +1254,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                                            stderr=subprocess.PIPE)
             else:
                 ssh = subprocess.Popen(cmd,
-                                   shell=True,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE)
+                                       shell=True,
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE)
             result = ssh.stdout.read().decode("utf-8")
             if not result:
                 error = ssh.stderr.readlines()
@@ -1229,25 +1268,24 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
              vm=None,
              interval=None,
              timeout=None):
-        name =  vm['name']
+        name = vm['name']
         if interval is None:
             # if interval is too low, OS will block your ip (I think)
             interval = 10
         if timeout is None:
             timeout = 360
-        Console.info(f"waiting for instance {name} to be reachable: Interval: {interval}, Timeout: {timeout}")
+        Console.info(
+            f"waiting for instance {name} to be reachable: Interval: {interval}, Timeout: {timeout}")
         timer = 0
         while timer < timeout:
             sleep(interval)
             timer += interval
             try:
                 r = self.list()
-                r = self.ssh(vm=vm,command='echo IAmReady').strip()
+                r = self.ssh(vm=vm, command='echo IAmReady').strip()
                 if 'IAmReady' in r:
                     return True
             except:
                 pass
 
-
         return False
-
