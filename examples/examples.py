@@ -12,7 +12,7 @@ provider = Provider(name='oracle')
 
 # Test list public ips
 def test_list_ips():
-    ips = provider.list_public_ips()
+    ips = provider.list_public_ips(ip='test_public_ip',available=True)
     print(ips)
 
 # Test create instance
@@ -207,3 +207,7 @@ def create_instance():
         max_wait_seconds=600
     )
     print('Launched instance')
+
+
+v = provider.get_public_ip(name='new_instance_test')
+print(v)
