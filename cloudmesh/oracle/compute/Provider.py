@@ -311,19 +311,21 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
                 vnic = self.compute.list_vnic_attachments(
                     self.compartment_id, instance_id=entry['_id']).data[0]
-                private = self.virtual_network.list_private_ips(
-                    subnet_id=vnic.subnet_id).data[0]
-                details = oci.core.models.GetPublicIpByPrivateIpIdDetails(
-                    private_ip_id=private.id)
-                public = self.virtual_network.get_public_ip_by_private_ip_id(
-                    details).data
+                if vnic.lifecycle_state != "DETACHED":
+                    private = self.virtual_network.list_private_ips(
+                        subnet_id=vnic.subnet_id).data[0]
+                    details = oci.core.models.GetPublicIpByPrivateIpIdDetails(
+                        private_ip_id=private.id)
+                    public = self.virtual_network.get_public_ip_by_private_ip_id(
+                        details).data
+                    if public:
+                        entry['ip_public'] = public.ip_address
+                    entry['ip_private'] = private.ip_address
 
-                if public:
-                    entry['ip_public'] = public.ip_address
-                entry['ip_private'] = private.ip_address
                 entry["cm"]["updated"] = str(DateTime.now())
                 entry["cm"]["created"] = str(entry["_time_created"])
                 entry["cm"]["status"] = str(entry["_lifecycle_state"])
+
                 entry['_launch_options'] = entry['_launch_options'].__dict__
                 entry['_source_details'] = entry['_source_details'].__dict__
                 entry['_agent_config'] = entry['_agent_config'].__dict__
@@ -1049,6 +1051,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             raise RuntimeError
 
         vm_instance = self.compute.get_instance(instance_ocid).data.__dict__;
+        updated_dict = vm_instance.as_dict()
         return self.update_dict(vm_instance, kind="vm")[0]
 
     # ok
@@ -1182,23 +1185,15 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         self.compute.update_instance(vm_instance.id, details)
 
     def ssh(self, vm=None, command=None):
-        ip = vm['ip_public']
-        key_name = vm['name']
+        ip = vm['cm']['ip_public']
         image = vm['_image']
+        key = self.default['key'].rpartition('.pub')[0]
         user = Image.guess_username(image)
-        print(key_name)
 
-        cm = CmDatabase()
-
-        keys = cm.find_all_by_name(name=key_name, kind="key")
-        print("KEYS: ", keys)
-        for k in keys:
-            if 'location' in k.keys():
-                if 'private' in k['location'].keys():
-                    key = k['location']['private']
-                    break
-
-        cm.close_client()
+        if len(ip) == 0:
+            Console.error("Public IP address not found")
+        if len(key) == 0:
+            Console.error("Key not found")
 
         if command is None:
             command = ""
