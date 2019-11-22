@@ -208,6 +208,28 @@ def create_instance():
     )
     print('Launched instance')
 
+# For storage
+file_storage_client = oci.file_storage.FileStorageClient(config)
+compartment_id = config["compartment_id"]
+availability_domain=get_availability_domain(
+            identity_client, compartment_id)
+print(availability_domain)
+# Creating File System
+create_response = file_storage_client.create_file_system(
+    oci.file_storage.models.CreateFileSystemDetails(
+        display_name='py_sdk_example_fs',
+        compartment_id=compartment_id,
+        availability_domain=availability_domain.name,
+        freeform_tags={"foo": "value"}
+    ),
+    retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY
+)
 
-v = provider.get_public_ip(name='new_instance_test')
-print(v)
+file_system = oci.wait_until(
+    file_storage_client,
+    file_storage_client.get_file_system(create_response.data.id),
+    'lifecycle_state',
+    'ACTIVE'
+).data
+print('Created file system:\n{}'.format(file_system))
+print('=============================\n')
