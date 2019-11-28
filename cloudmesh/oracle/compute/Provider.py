@@ -19,7 +19,6 @@ from cloudmesh.mongo.CmDatabase import CmDatabase
 from cloudmesh.provider import ComputeProviderPlugin
 from cloudmesh.secgroup.Secgroup import Secgroup, SecgroupRule
 from cloudmesh.common3.DateTime import DateTime
-from cloudmesh.common.debug import VERBOSE
 from cloudmesh.image.Image import Image
 
 class Provider(ComputeNodeABC, ComputeProviderPlugin):
@@ -79,13 +78,13 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             "sort_keys": ["cm.name",
                           "extra.minDisk"],
             "order": ["cm.name",
-                      "size_in_mbs",
+                      "_size_in_mbs",
                       "size_in_mbs",
                       "min_ram",
-                      "lifecycle_state",
+                      "_lifecycle_state",
                       "cm.driver"],
             "header": ["Name",
-                       "Size (Bytes)",
+                       "Size (MB)",
                        "MinDisk (GB)",
                        "MinRam (MB)",
                        "Status",
@@ -309,11 +308,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                 entry['_image'] = self.compute.get_image(
                     entry['_image_id']).data.display_name
 
-                vnic = self.compute.list_vnic_attachments(
-                    self.compartment_id, instance_id=entry['_id']).data[0]
-                if vnic.lifecycle_state != "DETACHED":
-                    private = self.virtual_network.list_private_ips(
-                        subnet_id=vnic.subnet_id).data[0]
+                private = self.get_private_ipobj(entry['_id'])
+                if private:
                     details = oci.core.models.GetPublicIpByPrivateIpIdDetails(
                         private_ip_id=private.id)
                     public = self.virtual_network.get_public_ip_by_private_ip_id(
@@ -666,6 +662,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return: dict of flavors
         """
         flavor_list = self.compute.list_shapes(self.compartment_id).data
+        print(flavor_list)
         return self.get_list(flavor_list, kind="flavor")
 
     def flavor(self, name=None):
@@ -751,13 +748,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: the name of the node
         :return: The dict representing the node
         """
-        # UNTESTED
-        ### TODO: THIS HAS TO BE CHANGED
-
-        server = self.cloudman.get_server(name)['id']
-        r = self.cloudman.compute.suspend_server(server)
-
-        return r
+        # same as stopping server instance
+        self.stop(name)
 
     def resume(self, name=None):
         """
@@ -1114,44 +1106,49 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         print(server)
         server.vnic.create_public_ip = False
 
-    # ok
     def detach_public_ip(self, name=None, ip=None):
-        ### TODO: THIS HAS TO BE CHANGED
-
         server = self.cloudman.get_server(name)['id']
         data = self.cloudman.list_floating_ips({'floating_ip_address': ip})[0]
         ip_id = data['id']
         return self.cloudman.detach_ip_from_server(server_id=server,
                                                    floating_ip_id=ip_id)
 
-    # ok
     def get_public_ip(self,
                       server=None,
                       name=None):
-        if not server:
-            server = self.info(name=name)
-        ip = None
-        return ip
+        ip_public = None
+        private = self.get_private_ip(server,name)
+        if private:
+            details = oci.core.models.GetPublicIpByPrivateIpIdDetails(
+                private_ip_id=private)
+            public = self.virtual_network.get_public_ip_by_private_ip_id(
+                details).data
+            if public:
+                ip_public = public.ip_address
+        return ip_public
 
-    # ok
+    def get_private_ipobj(self, id):
+        vnic = self.compute.list_vnic_attachments(
+            self.compartment_id, instance_id=id).data[0]
+        private = None
+        if vnic.lifecycle_state != "DETACHED":
+            private = self.virtual_network.list_private_ips(
+                subnet_id=vnic.subnet_id).data[0]
+        return private
+
     def get_private_ip(self,
                        server=None,
                        name=None):
-        ### TODO: THIS HAS TO BE CHANGED
+        if server is None:
+            server = self.get_instance(name)
 
-        if not server:
-            server = self.info(name=name)
-        ip = None
-        ips = server['addresses']
-        first = list(ips.keys())[0]
-        addresses = ips[first]
+        if server is None:
+            print("Server instance not found")
 
-        found = []
-        for address in addresses:
-            if address['OS-EXT-IPS:type'] == 'fixed':
-                ip = address['addr']
-                found.append(ip)
-        return found
+        private = self.get_private_ipobj(server.id)
+        if private:
+            private = private.ip_address
+        return private
 
     def console(self, vm=None):
         return self.log(server=vm)
