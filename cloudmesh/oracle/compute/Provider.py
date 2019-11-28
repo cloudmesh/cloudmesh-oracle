@@ -245,10 +245,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         self.identity_client = oci.identity.IdentityClient(self.credential)
         self.compartment_id = self.credential["compartment_id"]
 
-        # self.default_image = deft["image"]
-        # self.default_size = deft["size"]
-        # self.default.location = cred["datacenter"]
-
         try:
             self.public_key_path = conf["profile"]["publickey"]
             self.key_path = path_expand(
@@ -368,10 +364,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         :return: dict
         """
-        ### TODO: THIS HAS TO BE CHANGED
-
-        return self.get_list(self.cloudman.list_keypairs(),
-                             kind="key")
+        print("Not supported in oracle cloud")
 
     def key_upload(self, key=None):
         """
@@ -379,18 +372,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param key:
         :return:
         """
-
-        name = key["name"]
-        cloud = self.cloud
-        Console.msg(f"upload the key: {name} -> {cloud}")
-        try:
-            ### TODO: THIS HAS TO BE CHANGED
-
-            r = self.cloudman.create_keypair(name, key['public_key'])
-        except:  # openstack.exceptions.ConflictException:
-            raise ValueError(f"key already exists: {name}")
-
-        return r
+        print("Not supported in oracle cloud")
 
     def key_delete(self, name=None):
         """
@@ -398,14 +380,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: The name of the key
         :return:
         """
-
-        cloud = self.cloud
-        Console.msg(f"delete the key: {name} -> {cloud}")
-        ### TODO: THIS HAS TO BE CHANGED
-
-        r = self.cloudman.delete_keypair(name)
-
-        return r
+        print("Not supported in oracle cloud")
 
     def list_secgroups(self, name=None):
         """
@@ -468,27 +443,16 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         except:
             portmin = None
             portmax = None
-
-        sec_group = self.list_secgroups(name).id
-        rule_details = oci.core.models.AddSecurityRuleDetails(
-            direction='ingress', protocol=protocol)
-        details = oci.core.models.AddNetworkSecurityGroupSecurityRulesDetails(
-            [].append(rule_details))
-        self.virtual_network.add_network_security_group_security_rules(
-            sec_group, details)
-
-        '''
-        self.virtual_network.add_network_security_group_security_rules(
-                sec_group, details, 
-                port_range_min=portmin,
-                port_range_max=portmax,
-                
-                remote_ip_prefix=ip_range,
-                remote_group_id=None,
-                
-                ethertype='IPv4',
-                project_id=None)
-        '''
+        sec_group = self.list_secgroups(name)
+        if sec_group:
+            rule_details = oci.core.models.AddSecurityRuleDetails(
+                direction='INGRESS', protocol=protocol)
+            details = oci.core.models.AddNetworkSecurityGroupSecurityRulesDetails(
+                security_rules = [rule_details])
+            self.virtual_network.add_network_security_group_security_rules(
+                sec_group[0].id, details)
+        else:
+            print("Security group not found")
 
     def remove_secgroup(self, name=None):
         """
@@ -497,13 +461,15 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param name: The name
         :return:
         """
-        sec_group = self.list_secgroups(name).data
-        self.virtual_network.delete_network_security_group(sec_group.id)
         sec_group = self.list_secgroups(name)
+        if sec_group:
+            self.virtual_network.delete_network_security_group(sec_group[0].id)
+            sec_group = self.list_secgroups(name)
+        else:
+            print("Security group with this name not found")
         return len(sec_group) == 0
 
     def upload_secgroup(self, name=None):
-        ### TODO: THIS HAS TO BE CHANGED
 
         cgroups = self.list_secgroups(name)
         group_exists = False
@@ -514,12 +480,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         groups = Secgroup().list()
         rules = SecgroupRule().list()
 
-        # pprint (rules)
         data = {}
         for rule in rules:
             data[rule['name']] = rule
-
-        # pprint (groups)
 
         for group in groups:
             if group['name'] == name:
@@ -549,7 +512,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                         name=name,
                         rules=[found['name']])
 
-    # ok
     def add_rules_to_secgroup(self, name=None, rules=None):
 
         if name is None and rules is None:
@@ -577,9 +539,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             except:
                 ValueError("rule can not be found")
 
-    # not tested
     def remove_rules_from_secgroup(self, name=None, rules=None):
-        ### TODO: THIS HAS TO BE CHANGED
 
         if name is None and rules is None:
             raise ValueError("name or rules are None")
@@ -622,7 +582,12 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
                 if test:
                     id = r["security_group_id"]
-                    self.cloudman.delete_security_group_rule(id)
+                    list_test = [test]
+                    self.virtual_network.\
+                        remove_network_security_group_security_rules(id,
+                                                                     oci.core.models.RemoveNetworkSecurityGroupSecurityRulesDetails(
+                                                                        list_test
+                                                                     ))
 
     def get_list(self, d, kind=None, debug=False, **kwargs):
         """
@@ -683,9 +648,13 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         """
 
         vm_instance = self.get_instance(name)
-        if self.compute.get_instance(
-                vm_instance.id).data.lifecycle_state in 'STOPPED':
-            self.compute.instance_action(vm_instance.id, 'START')
+
+        if vm_instance:
+            if self.compute.get_instance(
+                    vm_instance.id).data.lifecycle_state in 'STOPPED':
+                self.compute.instance_action(vm_instance.id, 'START')
+        else:
+            print("VM instance not found")
 
     def stop(self, name=None):
         """
@@ -696,9 +665,13 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         """
 
         vm_instance = self.get_instance(name)
-        if self.compute.get_instance(
-                vm_instance.id).data.lifecycle_state in 'RUNNING':
-            self.compute.instance_action(vm_instance.id, 'SOFTSTOP')
+
+        if vm_instance:
+            if self.compute.get_instance(
+                    vm_instance.id).data.lifecycle_state in 'RUNNING':
+                self.compute.instance_action(vm_instance.id, 'SOFTSTOP')
+        else:
+            print("VM instance not found")
 
     def pause(self, name=None):
         """
@@ -778,9 +751,12 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :return: the dict of the node
         """
         vm_instance = self.get_instance(name)
-        r = self.compute.terminate_instance(vm_instance.id)
-
-        servers = self.update_dict([vm_instance], kind='vm')
+        servers = None
+        if vm_instance:
+            r = self.compute.terminate_instance(vm_instance.id)
+            servers = self.update_dict([vm_instance], kind='vm')
+        else:
+            print("VM instance not found")
         return servers
 
     def reboot(self, name=None):
@@ -1097,21 +1073,41 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         return available
 
-    # ok
     def attach_public_ip(self, name=None, ip=None):
-        ### TODO: THIS HAS TO BE CHANGED
         server = self.get_instance(name)
-        self.virtual_network.update_vnic()
-        self.compute.attach_vnic()
-        print(server)
-        server.vnic.create_public_ip = False
+        private = self.get_private_ipobj(server.id)
+
+        # Delete the already assigned public ip from the instance
+        self.detach_public_ip(name, ip)
+
+        # Create new public ip and assign it to the instance
+        details = oci.core.models.CreatePublicIpDetails(
+            compartment_id=self.compartment_id, lifetime="RESERVED",
+            private_ip_id=private.id)
+        self.virtual_network.create_public_ip(details)
+
+        return self.get_instance(name)
 
     def detach_public_ip(self, name=None, ip=None):
-        server = self.cloudman.get_server(name)['id']
-        data = self.cloudman.list_floating_ips({'floating_ip_address': ip})[0]
-        ip_id = data['id']
-        return self.cloudman.detach_ip_from_server(server_id=server,
-                                                   floating_ip_id=ip_id)
+        server = self.get_instance(name)
+        private = self.get_private_ipobj(server.id)
+
+        # Delete the already assigned public ip from the instance
+        if private:
+            details = oci.core.models.GetPublicIpByPrivateIpIdDetails(
+                private_ip_id=private.id)
+            public = self.virtual_network.get_public_ip_by_private_ip_id(
+                details).data
+            if public:
+                # EPHEMERAL public ips are deleted on detaching from server
+                if public.lifetime == "EPHEMERAL":
+                    self.virtual_network.delete_public_ip(public.id)
+                else:
+                    # RESERVED public ips can be detached and used later
+                    self.virtual_network.update_public_ip(
+                        public.id, oci.core.models.UpdatePublicIpDetails(
+                            private_ip_id=None
+                        ))
 
     def get_public_ip(self,
                       server=None,
