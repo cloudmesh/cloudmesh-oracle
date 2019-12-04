@@ -316,7 +316,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
                 entry["cm"]["updated"] = str(DateTime.now())
                 entry["cm"]["created"] = str(entry["_time_created"])
-                entry["cm"]["status"] = str(entry["_lifecycle_state"])
+                entry["status"] = entry["cm"]["status"] = str(entry["_lifecycle_state"])
 
                 entry['_launch_options'] = entry['_launch_options'].__dict__
                 entry['_source_details'] = entry['_source_details'].__dict__
@@ -703,7 +703,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         if data is None:
             raise ValueError(f"vm not found {name}")
 
-        r = self.update_dict([data], kind="vm")
+        r = self.update_dict(data.__dict__, kind="vm")
         return r
 
     def status(self, name=None):
@@ -754,7 +754,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         servers = None
         if vm_instance:
             r = self.compute.terminate_instance(vm_instance.id)
-            servers = self.update_dict([vm_instance], kind='vm')
+            servers = self.update_dict(vm_instance.__dict__, kind='vm')
         else:
             print("VM instance not found")
         return servers
@@ -1019,7 +1019,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             raise RuntimeError
 
         vm_instance = self.compute.get_instance(instance_ocid).data.__dict__;
-        updated_dict = vm_instance.as_dict()
         return self.update_dict(vm_instance, kind="vm")[0]
 
     # ok
@@ -1178,7 +1177,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         self.compute.update_instance(vm_instance.id, details)
 
     def ssh(self, vm=None, command=None):
-        ip = vm['cm']['ip_public']
+        ip = vm['ip_public']
         image = vm['_image']
         key = self.default['key'].rpartition('.pub')[0]
         user = Image.guess_username(image)
