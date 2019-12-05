@@ -1,6 +1,7 @@
 import oci
 from cloudmesh.configuration.Config import Config
 from cloudmesh.oracle.compute.Provider import Provider
+from cloudmesh.oracle.storage.Provider import Provider as StorageProvider
 
 # Initialize
 config_file = "~/.cloudmesh/cloudmesh.yaml"
@@ -9,6 +10,11 @@ compute = oci.core.ComputeClient(config)
 virtual_network = oci.core.VirtualNetworkClient(config)
 identity_client = oci.identity.IdentityClient(config)
 provider = Provider(name='oracle')
+storage_provider = StorageProvider('oracle')
+
+
+result = storage_provider.list("example-bucket")
+print("RESULT:", result)
 
 # Test list public ips
 def test_list_ips():
@@ -209,27 +215,28 @@ def create_instance():
     print('Launched instance')
 
 # For storage
-file_storage_client = oci.file_storage.FileStorageClient(config)
-compartment_id = config["compartment_id"]
-availability_domain=get_availability_domain(
-            identity_client, compartment_id)
-print(availability_domain)
-# Creating File System
-create_response = file_storage_client.create_file_system(
-    oci.file_storage.models.CreateFileSystemDetails(
-        display_name='py_sdk_example_fs',
-        compartment_id=compartment_id,
-        availability_domain=availability_domain.name,
-        freeform_tags={"foo": "value"}
-    ),
-    retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY
-)
+def create_file_system():
+    file_storage_client = oci.file_storage.FileStorageClient(config)
+    compartment_id = config["compartment_id"]
+    availability_domain=get_availability_domain(
+                identity_client, compartment_id)
+    print(availability_domain)
+    # Creating File System
+    create_response = file_storage_client.create_file_system(
+        oci.file_storage.models.CreateFileSystemDetails(
+            display_name='py_sdk_example_fs',
+            compartment_id=compartment_id,
+            availability_domain=availability_domain.name,
+            freeform_tags={"foo": "value"}
+        ),
+        retry_strategy=oci.retry.DEFAULT_RETRY_STRATEGY
+    )
 
-file_system = oci.wait_until(
-    file_storage_client,
-    file_storage_client.get_file_system(create_response.data.id),
-    'lifecycle_state',
-    'ACTIVE'
-).data
-print('Created file system:\n{}'.format(file_system))
-print('=============================\n')
+    file_system = oci.wait_until(
+        file_storage_client,
+        file_storage_client.get_file_system(create_response.data.id),
+        'lifecycle_state',
+        'ACTIVE'
+    ).data
+    print('Created file system:\n{}'.format(file_system))
+    print('=============================\n')
