@@ -15,7 +15,6 @@ from cloudmesh.common.util import path_expand
 from cloudmesh.common.variables import Variables
 from cloudmesh.common3.DictList import DictList
 from cloudmesh.configuration.Config import Config
-from cloudmesh.mongo.CmDatabase import CmDatabase
 from cloudmesh.provider import ComputeProviderPlugin
 from cloudmesh.secgroup.Secgroup import Secgroup, SecgroupRule
 from cloudmesh.common3.DateTime import DateTime
@@ -213,8 +212,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         """
 
         self.config = Config(config_path=configuration)
-
-        conf = Config(config_path=configuration)["cloudmesh"]
+        conf = self.config["cloudmesh"]
         super().__init__(name, conf)
 
         self.user = self.config["cloudmesh.profile.user"]
@@ -994,9 +992,14 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             create_instance_details.image_id = self.image(image).id
             create_instance_details.shape = size
 
-            key_file = open(key, "r")
-            create_instance_details.metadata = {
-                "ssh_authorized_keys": key_file.read()}
+            if os.path.isfile(key):
+                key_file = open(key, "r")
+                create_instance_details.metadata = {
+                    "ssh_authorized_keys": key_file.read()}
+            else:
+                create_instance_details.metadata = {
+                    "ssh_authorized_keys":
+                        self.key_val}
 
             result = self.compute.launch_instance(create_instance_details)
             instance_ocid = result.data.id
