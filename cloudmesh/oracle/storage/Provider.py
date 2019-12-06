@@ -132,7 +132,8 @@ class Provider(StorageABC):
         :param directory: the name of the directory
         :return: dict
         """
-        print("Creating directories is not supported in oracle")
+        print("Creating directories without creating a file is not supported "
+              "in Oracle")
 
     def list(self, source=None, dir_only=False, recursive=False):
         """

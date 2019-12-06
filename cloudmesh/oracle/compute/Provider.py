@@ -331,8 +331,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                     DateTime.now())
                 entry['_launch_options'] = entry['_launch_options'].__dict__
 
-            entry["oracle_id"] = entry["_id"]
-            entry.pop("_id")
+            key_id = "_id"
+            if key_id in entry.keys():
+                entry["oracle_id"] = entry[key_id]
+                entry.pop(key_id)
             d.append(entry)
         return d
 
