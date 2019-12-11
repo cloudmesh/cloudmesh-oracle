@@ -703,7 +703,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         data = self.get_instance(name)
 
         if data is None:
-            raise ValueError(f"vm not found {name}")
+            print("VM not found {name}")
+            return None
 
         r = self.update_dict(data.__dict__, kind="vm")
         return r
