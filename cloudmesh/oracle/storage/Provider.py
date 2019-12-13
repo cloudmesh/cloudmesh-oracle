@@ -102,14 +102,7 @@ class Provider(StorageABC):
             self.namespace, self.bucket_name,
             filename)
 
-        info = {
-            "fileName": filename,
-            "lastModificationDate":
-                metadata.headers['last-modified'],
-            "contentLength":
-                metadata.headers['Content-Length']
-        }
-        return info
+        return self.extract_file_dict(filename, metadata.headers)
 
     def bucket_create(self, name=None):
         if name is None:
@@ -172,7 +165,6 @@ class Provider(StorageABC):
         """
 
         self.storage_dict['action'] = 'list'
-        self.storage_dict['source'] = source
         self.storage_dict['recursive'] = recursive
         dir_files_list = []
 
@@ -182,16 +174,17 @@ class Provider(StorageABC):
                 self.namespace, self.bucket_name).data.objects
         else:
             # Get items from bucket that start with name 'source'
-            source = self.get_os_path(source)
+            source = str(self.get_os_path(source))
 
             objs = self.object_storage.list_objects(
-                self.namespace, self.bucket_name, prefix=str(
-                    source)).data.objects
+                self.namespace, self.bucket_name, prefix=source)\
+                .data.objects
 
         # Extract information of matched objects
         for obj in objs:
             dir_files_list.append(self.get_and_extract_file_dict(obj.name))
 
+        self.storage_dict['source'] = source
         self.storage_dict['objlist'] = dir_files_list
         dictObj = self.update_dict(self.storage_dict['objlist'])
         return dictObj
@@ -212,23 +205,27 @@ class Provider(StorageABC):
         self.storage_dict['action'] = 'delete'
         self.storage_dict['source'] = source
         self.storage_dict['recursive'] = recursive
-        trimmed_source = self.get_os_path(source)
+        trimmed_source = str(self.get_os_path(source))
+        is_source_dir = os.path.isdir(trimmed_source)
         dict_obj = []
 
         objs = self.object_storage.list_objects(
-            self.namespace, self.bucket_name, prefix=str(trimmed_source))
+            self.namespace, self.bucket_name, prefix=trimmed_source)
 
-        print(objs.data.objects)
-        for obj in objs.data.objects:
-            # Save deleted object details to be updated in the db
-            dict_obj.append(self.get_and_extract_file_dict(obj.name))
+        if recursive is False and is_source_dir:
+            self.storage_dict['message'] = "The directory has child files. " \
+                                           "Please select the recursive option."
+        else:
+            for obj in objs.data.objects:
+                # Save deleted object details to be updated in the db
+                dict_obj.append(self.get_and_extract_file_dict(obj.name))
 
-            # Delete object
-            self.object_storage.delete_object(self.namespace,
-                                              self.bucket_name,
-                                              obj.name)
+                # Delete object
+                self.object_storage.delete_object(self.namespace,
+                                                  self.bucket_name,
+                                                  obj.name)
 
-        self.storage_dict['message'] = 'Source Deleted'
+            self.storage_dict['message'] = 'Source Deleted'
         self.storage_dict['objlist'] = dict_obj
         return self.update_dict(self.storage_dict['objlist'])
 
@@ -278,7 +275,7 @@ class Provider(StorageABC):
                 # Object upload
                 self.object_storage.put_object(
                     self.namespace, self.bucket_name,
-                    str(trimmed_destination / f), open(str(trimmed_source / f),
+                    str(trimmed_destination / f), open(trimmed_source / f,
                                                        'rb'))
 
                 # Extract header data from object
@@ -295,7 +292,7 @@ class Provider(StorageABC):
         return self.update_dict(self.storage_dict['objlist'])
 
     # function to download file or directory
-    def get(self, source=None, destination=None, recursive=False):
+    def get(self, source=None, destination=None, recursive=True):
         """
         gets the source from the service
         :param source: the source which either can be a directory or file
@@ -340,7 +337,7 @@ class Provider(StorageABC):
                                 f.write(chunk)
 
                     files_downloaded.append(
-                        self.extract_file_dict(trimmed_source,
+                        self.extract_file_dict(str(trimmed_source),
                                                obj_data.headers))
                     self.storage_dict['message'] = 'Source downloaded'
                 except FileNotFoundError as e:
