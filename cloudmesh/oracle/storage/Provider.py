@@ -69,7 +69,7 @@ class Provider(StorageABC):
             try:
                 if os.path.isdir(abspath):
                     if recursive:
-                        files = files + self.ls_files(abspath)
+                        files = files + self.ls_files(abspath, recursive)
                 else:
                     files.append(abspath)
             except FileNotFoundError:
@@ -271,17 +271,17 @@ class Provider(StorageABC):
         elif is_source_dir is True:
             # Its a directory, get all files from the directory to upload
             for f in self.ls_files(trimmed_source, recursive):
-
+                dest_file_name = str(trimmed_destination /
+                        os.path.relpath(f, trimmed_source))
                 # Object upload
                 self.object_storage.put_object(
                     self.namespace, self.bucket_name,
-                    str(trimmed_destination / f), open(trimmed_source / f,
-                                                       'rb'))
+                    dest_file_name,
+                    open(f, 'rb'))
 
                 # Extract header data from object
                 files_uploaded.append(
-                    self.get_and_extract_file_dict(str(
-                        trimmed_destination / f)))
+                    self.get_and_extract_file_dict(dest_file_name))
 
             self.storage_dict['message'] = 'Source uploaded'
         else:
@@ -326,7 +326,8 @@ class Provider(StorageABC):
 
                 try:
                     if is_target_dir:
-                        with open(trimmed_destination / trimmed_source, 'wb') as f:
+                        with open(trimmed_destination / os.path.basename(
+                                file_obj.name), 'wb') as f:
                             for chunk in obj_data.data.raw.stream(
                                     1024 * 1024, decode_content=False):
                                 f.write(chunk)
