@@ -1266,7 +1266,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         name = vm['name']
         if interval is None:
             # if interval is too low, OS will block your ip (I think)
-            interval = 10
+            interval = 120
         if timeout is None:
             timeout = 360
         Console.info(
