@@ -74,18 +74,13 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             "humanize": ["launched_at"]
         },
         "image": {
-            "sort_keys": ["cm.name",
-                          "extra.minDisk"],
+            "sort_keys": ["cm.name"],
             "order": ["cm.name",
                       "_size_in_mbs",
-                      "size_in_mbs",
-                      "min_ram",
                       "_lifecycle_state",
                       "cm.driver"],
             "header": ["Name",
                        "Size (MB)",
-                       "MinDisk (GB)",
-                       "MinRam (MB)",
                        "Status",
                        "Driver"]
         },
