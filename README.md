@@ -27,7 +27,9 @@ TBD
 Add the following entry to you cloudmesh.yaml file:
 
 ```
-oracle:
+cloudmesh:
+  compute:
+    oracle:
       cm:
         active: true
         heading: ORACLE

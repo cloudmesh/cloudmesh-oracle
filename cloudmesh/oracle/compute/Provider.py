@@ -23,6 +23,31 @@ from cloudmesh.image.Image import Image
 class Provider(ComputeNodeABC, ComputeProviderPlugin):
     kind = "oracle"
 
+    sample = """
+    cloudmesh:
+      compute:
+        {name}:
+          cm:
+            active: true
+            heading: {name}
+            host: TBD
+            label: {name}
+            kind: oracle
+            version: TBD
+            service: compute
+          default:
+            image: ami-0f65671a86f061fcd
+            size: t2.micro
+          credentials:
+            user: TBD
+            fingerprint: TBD
+            key_file: ~/.oci/oci_api_key.pem
+            pass_phrase: {pass_phrase}
+            tenancy: {tenancy}
+            compartment_id: {compartment_id}
+            region: us-ashburn-1
+    """
+
     vm_state = [
         'STARTING',
         'RUNNING',
