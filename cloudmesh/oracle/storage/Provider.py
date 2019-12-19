@@ -263,7 +263,7 @@ class Provider(StorageABC):
             self.object_storage.put_object(self.namespace,
                                            self.bucket_name,
                                            str(trimmed_destination),
-                                           open(trimmed_source, 'r'))
+                                           open(trimmed_source, 'rb'))
 
             # make head call since file upload does not return
             # obj dict to extract meta data
