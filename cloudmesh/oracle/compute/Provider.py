@@ -20,6 +20,7 @@ from cloudmesh.secgroup.Secgroup import Secgroup, SecgroupRule
 from cloudmesh.common.DateTime import DateTime
 from cloudmesh.image.Image import Image
 
+
 class Provider(ComputeNodeABC, ComputeProviderPlugin):
     kind = "oracle"
 
@@ -309,7 +310,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
                 entry["cm"]["updated"] = str(DateTime.now())
                 entry["cm"]["created"] = str(entry["_time_created"])
-                entry["status"] = entry["cm"]["status"] = str(entry["_lifecycle_state"])
+                entry["status"] = entry["cm"]["status"] = str(
+                    entry["_lifecycle_state"])
 
                 entry['_launch_options'] = entry['_launch_options'].__dict__
                 entry['_source_details'] = entry['_source_details'].__dict__
@@ -445,7 +447,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             rule_details = oci.core.models.AddSecurityRuleDetails(
                 direction='INGRESS', protocol=protocol)
             details = oci.core.models.AddNetworkSecurityGroupSecurityRulesDetails(
-                security_rules = [rule_details])
+                security_rules=[rule_details])
             self.virtual_network.add_network_security_group_security_rules(
                 sec_group[0].id, details)
         else:
@@ -580,10 +582,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                 if test:
                     id = r["security_group_id"]
                     list_test = [test]
-                    self.virtual_network.\
+                    self.virtual_network. \
                         remove_network_security_group_security_rules(id,
                                                                      oci.core.models.RemoveNetworkSecurityGroupSecurityRulesDetails(
-                                                                        list_test
+                                                                         list_test
                                                                      ))
 
     def get_list(self, d, kind=None, debug=False, **kwargs):
@@ -750,9 +752,64 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         """
         vm_instance = self.get_instance(name)
         servers = None
-        if vm_instance:
-            r = self.compute.terminate_instance(vm_instance.id)
-            servers = self.update_dict(vm_instance.__dict__, kind='vm')
+        if vm_instance and vm_instance.lifecycle_state != 'TERMINATED':
+            vnic = self.compute.list_vnic_attachments(
+                self.compartment_id, instance_id=vm_instance.id).data[0]
+
+            # Get associated vcn and subnet
+            if vnic.lifecycle_state != "DETACHED":
+                subnet_id = vnic.subnet_id
+                vcn_id = self.virtual_network.get_subnet(
+                    vnic.subnet_id).data.vcn_id
+
+            print("Terminating instance...")
+            self.compute.terminate_instance(vm_instance.id)
+
+            ins = oci.wait_until(
+                self.compute,
+                self.compute.get_instance(vm_instance.id),
+                'lifecycle_state',
+                'TERMINATED',
+                max_wait_seconds=300
+            ).data
+
+            servers = self.update_dict(ins.__dict__, kind='vm')
+            print("Instance terminated.")
+            print("Deleting associated resources...")
+
+            if subnet_id:
+                self.virtual_network.delete_subnet(subnet_id)
+
+            if vcn_id:
+                vcn = self.virtual_network.get_vcn(
+                    vcn_id).data
+
+                # Update route table
+                self.virtual_network.update_route_table(
+                    vcn.default_route_table_id,
+                    oci.core.models.UpdateRouteTableDetails(route_rules=[]))
+
+                # Delete gateway
+                gateway_id = self.virtual_network.list_internet_gateways(
+                    self.compartment_id, vcn_id).data[0].id
+                self.virtual_network.delete_internet_gateway(gateway_id)
+
+                # Delete security group
+                nsg_id = self.virtual_network.list_network_security_groups(
+                    self.compartment_id, vcn_id=vcn.id).data[0].id
+                self.virtual_network.delete_network_security_group(nsg_id)
+                oci.wait_until(
+                    self.virtual_network,
+                    self.virtual_network.get_network_security_group(nsg_id),
+                    'lifecycle_state',
+                    'TERMINATED',
+                    succeed_on_not_found=True,
+                    max_wait_seconds=300
+                )
+
+                # Delete VCN
+                self.virtual_network.delete_vcn(vcn_id)
+                print("Associated resources deleted")
         else:
             print("VM instance not found")
         return servers
@@ -797,27 +854,19 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                 self.compartment_id).data[0]
         return availability_domain
 
-    def create_vcn_and_subnet(self, virtual_network, availability_domain):
+    def create_vcn_and_subnet(self, name, availability_domain):
         try:
             # Create a VCN
-            vcn_name = 'test_vcn'
+            vcn_name = 'vcn_' + name
             cidr_block = "11.0.0.0/16"
-            '''
-            result = virtual_network.list_vcns(self.compartment_id,
-                                               display_name=vcn_name).data
-    
-            if not result:
-            '''
             vcn_details = oci.core.models.CreateVcnDetails(
                 cidr_block=cidr_block, display_name=vcn_name,
                 compartment_id=self.compartment_id)
-            result = virtual_network.create_vcn(vcn_details).data
-            # else:
-            # result = result[0]
+            result = self.virtual_network.create_vcn(vcn_details).data
 
             vcn = oci.wait_until(
-                virtual_network,
-                virtual_network.get_vcn(result.id),
+                self.virtual_network,
+                self.virtual_network.get_vcn(result.id),
                 'lifecycle_state',
                 'AVAILABLE',
                 max_wait_seconds=300
@@ -825,12 +874,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             print('Created VCN')
 
             # Create a subnet
-            subnet_name = 'test_subnet'
+            subnet_name = 'subnet_' + name
             subnet_cidr_block1 = "11.0.0.0/25"
-            # result_subnet = virtual_network.list_subnets(self.compartment_id, vcn.id,
-            #                                             display_name=subnet_name).data
-            # if not result_subnet:
-            result_subnet = virtual_network.create_subnet(
+            result_subnet = self.virtual_network.create_subnet(
                 oci.core.models.CreateSubnetDetails(
                     compartment_id=self.compartment_id,
                     availability_domain=availability_domain,
@@ -839,12 +885,10 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                     cidr_block=subnet_cidr_block1
                 )
             ).data
-            # else:
-            # result_subnet = result_subnet[0]
 
             subnet = oci.wait_until(
-                virtual_network,
-                virtual_network.get_subnet(result_subnet.id),
+                self.virtual_network,
+                self.virtual_network.get_subnet(result_subnet.id),
                 'lifecycle_state',
                 'AVAILABLE',
                 max_wait_seconds=300
@@ -852,7 +896,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             print('Created subnet')
 
             # Create an internet gateway
-            result_gateway = virtual_network.create_internet_gateway(
+            result_gateway = self.virtual_network.create_internet_gateway(
                 oci.core.models.CreateInternetGatewayDetails(
                     compartment_id=self.compartment_id,
                     display_name='test_gateway',
@@ -862,8 +906,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             ).data
 
             gateway = oci.wait_until(
-                virtual_network,
-                virtual_network.get_internet_gateway(result_gateway.id),
+                self.virtual_network,
+                self.virtual_network.get_internet_gateway(result_gateway.id),
                 'lifecycle_state',
                 'AVAILABLE',
                 max_wait_seconds=300
@@ -874,23 +918,24 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             route_rules.append(oci.core.models.RouteRule(
                 destination='0.0.0.0/0', network_entity_id=result_gateway.id))
 
-            new_vcn = virtual_network.get_vcn(vcn.id).data
+            new_vcn = self.virtual_network.get_vcn(vcn.id).data
             route_table_id = new_vcn.default_route_table_id
-            route_table = virtual_network.get_route_table(route_table_id).data
-            virtual_network.update_route_table(route_table.id,
-                                               oci.core.models.UpdateRouteTableDetails(
-                                                   route_rules=route_rules
-                                               ))
+            route_table = self.virtual_network.get_route_table(
+                route_table_id).data
+            self.virtual_network.update_route_table(route_table.id,
+                                                    oci.core.models.UpdateRouteTableDetails(
+                                                        route_rules=route_rules
+                                                    ))
 
             return {'vcn': vcn, 'subnet': subnet}
 
         except:
             if subnet is not None:
-                virtual_network.delete_subnet(subnet.id)
+                self.virtual_network.delete_subnet(subnet.id)
             if gateway is not None:
-                virtual_network.delete_internet_gateway(gateway.id)
+                self.virtual_network.delete_internet_gateway(gateway.id)
             if vcn is not None:
-                virtual_network.delete_vcn(vcn.id)
+                self.virtual_network.delete_vcn(vcn.id)
 
     def create(self,
                name=None,
@@ -961,7 +1006,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             create_instance_details.compartment_id = self.compartment_id
             availability_domain = self.get_availability_domain()
 
-            vcn_and_subnet = self.create_vcn_and_subnet(self.virtual_network,
+            vcn_and_subnet = self.create_vcn_and_subnet(name,
                                                         availability_domain.name)
 
             if secgroup is not None:
@@ -1115,7 +1160,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                       server=None,
                       name=None):
         ip_public = None
-        private = self.get_private_ip(server,name)
+        private = self.get_private_ip(server, name)
         if private:
             details = oci.core.models.GetPublicIpByPrivateIpIdDetails(
                 private_ip_id=private)
@@ -1182,7 +1227,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
     def ssh(self, vm=None, command=None):
         ip = vm['ip_public']
         image = vm['_image']
-        key = self.default['key'].rpartition('.pub')[0]
+        key = self.key_path.rpartition('.pub')[0]
         user = Image.guess_username(image)
 
         if len(ip) == 0:
