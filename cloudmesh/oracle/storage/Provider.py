@@ -27,6 +27,19 @@ class Provider(StorageABC):
              'region': config['region']}
         return d
 
+    @staticmethod
+    def get_filename(filename):
+        if filename.startswith("./"):
+
+            _filename = filename[2:]
+
+        elif filename.startswith("."):
+            _filename = filename[1:]
+        else:
+            _filename = filename
+
+        return _filename
+
     def __init__(self, service=None, config="~/.cloudmesh/cloudmesh.yaml"):
         """
         TBD
@@ -164,30 +177,29 @@ class Provider(StorageABC):
 
         """
 
+        updated_source = self.get_filename(str(self.get_os_path(source)))
+        self.storage_dict['source'] = updated_source
         self.storage_dict['action'] = 'list'
         self.storage_dict['recursive'] = recursive
         dir_files_list = []
 
-        if source is None:
+        if not updated_source:
             # Get all items from bucket
             objs = self.object_storage.list_objects(
                 self.namespace, self.bucket_name).data.objects
         else:
             # Get items from bucket that start with name 'source'
-            source = str(self.get_os_path(source))
-
             objs = self.object_storage.list_objects(
                 self.namespace, self.bucket_name, prefix=source)\
                 .data.objects
 
         # Extract information of matched objects
         for obj in objs:
+            print(obj.name)
             dir_files_list.append(self.get_and_extract_file_dict(obj.name))
 
-        self.storage_dict['source'] = source
         self.storage_dict['objlist'] = dir_files_list
-        dictObj = self.update_dict(self.storage_dict['objlist'])
-        return dictObj
+        return self.update_dict(self.storage_dict['objlist'])
 
     # function to delete file or directory
     def delete(self, source=None, recursive=True):
@@ -202,10 +214,11 @@ class Provider(StorageABC):
         if source is None:
             print("Please enter the file/directory name to delete.")
             exit(0)
-        self.storage_dict['action'] = 'delete'
-        self.storage_dict['source'] = source
-        self.storage_dict['recursive'] = recursive
+
         trimmed_source = str(self.get_os_path(source))
+        self.storage_dict['action'] = 'delete'
+        self.storage_dict['source'] = trimmed_source
+        self.storage_dict['recursive'] = recursive
         is_source_dir = os.path.isdir(trimmed_source)
         dict_obj = []
 
@@ -306,11 +319,11 @@ class Provider(StorageABC):
         self.storage_dict['destination'] = destination
         self.storage_dict['recursive'] = recursive
 
-        trimmed_source = self.get_os_path(source)
+        trimmed_source = str(self.get_os_path(source))
         trimmed_destination = self.get_os_path(destination)
 
         file_objs = self.object_storage.list_objects(
-            self.namespace, self.bucket_name, prefix=str(trimmed_source))
+            self.namespace, self.bucket_name, prefix=trimmed_source)
 
         files_downloaded = []
         is_target_dir = os.path.isdir(trimmed_destination)
@@ -338,15 +351,15 @@ class Provider(StorageABC):
                                 f.write(chunk)
 
                     files_downloaded.append(
-                        self.extract_file_dict(str(trimmed_source),
+                        self.extract_file_dict(file_obj.name,
                                                obj_data.headers))
                     self.storage_dict['message'] = 'Source downloaded'
                 except FileNotFoundError as e:
                     self.storage_dict['message'] = 'Destination not found'
 
         self.storage_dict['objlist'] = files_downloaded
-        dictObj = self.update_dict(self.storage_dict['objlist'])
-        return dictObj
+        pprint(self.storage_dict['objlist'])
+        return self.update_dict(self.storage_dict['objlist'])
 
     # function to search a file or directory and list its attributes
     def search(self,
@@ -397,6 +410,5 @@ class Provider(StorageABC):
             self.storage_dict['message'] = 'File found'
 
         pprint(self.storage_dict)
-        dictObj = self.update_dict(self.storage_dict['objlist'])
-        return dictObj
+        return self.update_dict(self.storage_dict['objlist'])
 
