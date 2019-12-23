@@ -307,7 +307,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             entry["cm"].update({
                 "kind": kind,
                 "driver": self.cloudtype,
-                "cloud": self.cloud
+                "cloud": self.cloud,
+                "updated": str(DateTime.now())
             })
 
             if kind == 'key':
@@ -333,7 +334,6 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                         entry['ip_public'] = public.ip_address
                     entry['ip_private'] = private.ip_address
 
-                entry["cm"]["updated"] = str(DateTime.now())
                 entry["cm"]["created"] = str(entry["_time_created"])
                 entry["status"] = entry["cm"]["status"] = str(
                     entry["_lifecycle_state"])
@@ -344,14 +344,15 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
             elif kind == 'flavor':
                 entry['name'] = entry["cm"]["name"] = entry["_shape"]
-                entry["cm"]["created"] = entry["updated"] = str(
-                    DateTime.now())
+                entry["cm"]["created"] = str(DateTime.now())
 
             elif kind == 'image':
                 entry['name'] = entry["cm"]["name"] = entry["_display_name"]
-                entry["cm"]["created"] = entry["updated"] = str(
-                    DateTime.now())
+                entry["cm"]["created"] = str(DateTime.now())
                 entry['_launch_options'] = entry['_launch_options'].__dict__
+
+            elif kind == 'secgroup':
+                entry['name'] = entry["cm"]["name"] = entry["_display_name"]
 
             key_id = "_id"
             if key_id in entry.keys():
