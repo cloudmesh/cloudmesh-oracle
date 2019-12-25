@@ -2,11 +2,37 @@ import oci
 from pprint import pprint
 import os
 from pathlib import Path
+import textwrap
 
 from cloudmesh.storage.StorageNewABC import StorageABC
 from cloudmesh.configuration.Config import Config
 
 class Provider(StorageABC):
+
+    sample = textwrap.dedent("""
+    cloudmesh:
+      storage:
+        {name}:
+          cm:
+            active: true
+            heading: {name}
+            host: cloud.oracle.com
+            label: {name}
+            kind: oracle
+            version: TBD
+            service: storage
+          default:
+            directory: TBD
+            bucket: home
+          credentials:
+            user: {user}
+            fingerprint: {fingerprint}
+            key_file: ~/.oci/oci_api_key.pem
+            pass_phrase: {pass_phrase}
+            tenancy: {tenancy}
+            compartment_id: {compartment_id}
+            region: us-ashburn-1
+    """)
 
     @staticmethod
     def _get_credentials(config):
