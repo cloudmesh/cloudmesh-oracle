@@ -22,7 +22,7 @@ class Provider(StorageABC):
             version: TBD
             service: storage
           default:
-            directory: TBD
+            directory: .
             bucket: home
           credentials:
             user: {user}
