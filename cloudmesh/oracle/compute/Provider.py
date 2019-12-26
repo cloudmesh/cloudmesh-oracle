@@ -21,6 +21,7 @@ from cloudmesh.common.DateTime import DateTime
 from cloudmesh.image.Image import Image
 import textwrap
 
+
 class Provider(ComputeNodeABC, ComputeProviderPlugin):
     kind = "oracle"
 
@@ -181,7 +182,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         if output == "table":
             if kind == "secrule":
-                # this is just a temporary fix, both in sec.py and here the secgruops and secrules should be separated
+                # this is just a temporary fix, both in sec.py and here the
+                # secgruops and secrules should be separated
                 result = []
                 for group in data:
                     # for rule in group['security_group_rules']:
@@ -256,7 +258,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         for field in fields:
             if self.cred[field] == 'TBD':
                 Console.error(
-                    f"The credential for Oracle cloud is incomplete. {field} must not be TBD")
+                    f"The credential for Oracle cloud is incomplete. {field} "
+                    "must not be TBD")
         self.credential = self._get_credentials(self.cred)
 
         self.compute = oci.core.ComputeClient(self.credential)
@@ -608,11 +611,11 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
                 if test:
                     id = r["security_group_id"]
                     list_test = [test]
-                    self.virtual_network. \
-                        remove_network_security_group_security_rules(id,
-                                                                     oci.core.models.RemoveNetworkSecurityGroupSecurityRulesDetails(
-                                                                         list_test
-                                                                     ))
+                    self.virtual_network.remove_network_security_group_security_rules(
+                        id,
+                        oci.core.models.RemoveNetworkSecurityGroupSecurityRulesDetails(
+                            list_test
+                        ))
 
     def get_list(self, d, kind=None, debug=False, **kwargs):
         """
@@ -676,7 +679,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         if vm_instance:
             if self.compute.get_instance(
-                    vm_instance.id).data.lifecycle_state in 'STOPPED':
+                vm_instance.id).data.lifecycle_state in 'STOPPED':
                 self.compute.instance_action(vm_instance.id, 'START')
         else:
             print("VM instance not found")
@@ -693,7 +696,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
 
         if vm_instance:
             if self.compute.get_instance(
-                    vm_instance.id).data.lifecycle_state in 'RUNNING':
+                vm_instance.id).data.lifecycle_state in 'RUNNING':
                 self.compute.instance_action(vm_instance.id, 'SOFTSTOP')
         else:
             print("VM instance not found")
@@ -940,15 +943,15 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             ).data
             print('Created gateway')
 
-            route_rules = []
-            route_rules.append(oci.core.models.RouteRule(
-                destination='0.0.0.0/0', network_entity_id=result_gateway.id))
+            route_rules = [oci.core.models.RouteRule(
+                destination='0.0.0.0/0', network_entity_id=result_gateway.id)]
 
             new_vcn = self.virtual_network.get_vcn(vcn.id).data
             route_table_id = new_vcn.default_route_table_id
             route_table = self.virtual_network.get_route_table(
                 route_table_id).data
-            self.virtual_network.update_route_table(route_table.id,
+            self.virtual_network.update_route_table(
+                route_table.id,
                                                     oci.core.models.UpdateRouteTableDetails(
                                                         route_rules=route_rules
                                                     ))
@@ -1032,7 +1035,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             create_instance_details.compartment_id = self.compartment_id
             availability_domain = self.get_availability_domain()
 
-            vcn_and_subnet = self.create_vcn_and_subnet(name,
+            vcn_and_subnet = self.create_vcn_and_subnet(
+                name,
                                                         availability_domain.name)
 
             if secgroup is not None:
@@ -1047,14 +1051,14 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             create_instance_details.availability_domain = availability_domain.name
             create_instance_details.display_name = name
 
-            if (secgroup is not None):
-                nsgs = []
-                nsgs.append(s_id)
+            if secgroup is not None:
+                nsgs = [s_id]
             else:
                 nsgs = None
 
             subnet = vcn_and_subnet['subnet']
-            create_instance_details.create_vnic_details = oci.core.models.CreateVnicDetails(
+            create_instance_details.create_vnic_details = \
+                oci.core.models.CreateVnicDetails(
                 nsg_ids=nsgs,
                 subnet_id=subnet.id,
                 assign_public_ip=public
@@ -1092,7 +1096,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
             print(e)
             raise RuntimeError
 
-        vm_instance = self.compute.get_instance(instance_ocid).data.__dict__;
+        vm_instance = self.compute.get_instance(instance_ocid).data.__dict__
         return self.update_dict(vm_instance, kind="vm")[0]
 
     # ok
@@ -1142,7 +1146,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         for ip_names in ips:
             if ip_names.lifecycle_state == 'AVAILABLE':
                 available = ip_names.ip_address
-                break;
+                break
 
         return available
 
@@ -1336,7 +1340,8 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         if timeout is None:
             timeout = 360
         Console.info(
-            f"waiting for instance {name} to be reachable: Interval: {interval}, Timeout: {timeout}")
+            f"waiting for instance {name} to be reachable: Interval: "
+            "{interval}, Timeout: {timeout}")
         timer = 0
         while timer < timeout:
             sleep(interval)

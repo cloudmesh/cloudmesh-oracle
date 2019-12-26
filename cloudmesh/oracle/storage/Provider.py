@@ -7,8 +7,8 @@ import textwrap
 from cloudmesh.storage.StorageNewABC import StorageABC
 from cloudmesh.configuration.Config import Config
 
-class Provider(StorageABC):
 
+class Provider(StorageABC):
     sample = textwrap.dedent("""
     cloudmesh:
       storage:
@@ -146,7 +146,7 @@ class Provider(StorageABC):
     def bucket_create(self, name=None):
         if name is None:
             name = self.bucket_name
-            
+
         request = oci.object_storage.models.CreateBucketDetails(
             name=self.bucket_name,
             compartment_id=self.compartment_id)
@@ -167,9 +167,9 @@ class Provider(StorageABC):
             "contentLength":
                 bucket.headers['Content-Length']
         })
-        dictObj = self.update_dict(self.storage_dict['objlist'])
+        _dict = self.update_dict(self.storage_dict['objlist'])
 
-        return dictObj
+        return _dict
 
     def bucket_exists(self, name=None):
         is_bucket_exists = False
@@ -216,7 +216,7 @@ class Provider(StorageABC):
         else:
             # Get items from bucket that start with name 'source'
             objs = self.object_storage.list_objects(
-                self.namespace, self.bucket_name, prefix=source)\
+                self.namespace, self.bucket_name, prefix=source) \
                 .data.objects
 
         # Extract information of matched objects
@@ -273,7 +273,8 @@ class Provider(StorageABC):
         """
         puts the source on the service
         :param source: the source file
-        :param destination: the destination which either can be a directory or file
+        :param destination: the destination which either can be a
+                            directory or file
         :param recursive: in case of directory the recursive refers to all
                           subdirectories in the specified source
         :return: dict
@@ -311,7 +312,7 @@ class Provider(StorageABC):
             # Its a directory, get all files from the directory to upload
             for f in self.ls_files(trimmed_source, recursive):
                 dest_file_name = str(trimmed_destination /
-                        os.path.relpath(f, trimmed_source))
+                                     os.path.relpath(f, trimmed_source))
                 # Object upload
                 self.object_storage.put_object(
                     self.namespace, self.bucket_name,
@@ -335,7 +336,8 @@ class Provider(StorageABC):
         """
         gets the source from the service
         :param source: the source which either can be a directory or file
-        :param destination: the destination which either can be a directory or file
+        :param destination: the destination which either can be a directory
+                            or file
         :param recursive: in case of directory the recursive refers to all
                           subdirectories in the specified source
         :return: dict
@@ -366,14 +368,14 @@ class Provider(StorageABC):
                 try:
                     if is_target_dir:
                         with open(trimmed_destination / os.path.basename(
-                                file_obj.name), 'wb') as f:
+                            file_obj.name), 'wb') as f:
                             for chunk in obj_data.data.raw.stream(
-                                    1024 * 1024, decode_content=False):
+                                1024 * 1024, decode_content=False):
                                 f.write(chunk)
                     else:
                         with open(trimmed_destination, 'wb') as f:
                             for chunk in obj_data.data.raw.stream(
-                                    1024 * 1024, decode_content=False):
+                                1024 * 1024, decode_content=False):
                                 f.write(chunk)
 
                     files_downloaded.append(
@@ -437,4 +439,3 @@ class Provider(StorageABC):
 
         pprint(self.storage_dict)
         return self.update_dict(self.storage_dict['objlist'])
-
