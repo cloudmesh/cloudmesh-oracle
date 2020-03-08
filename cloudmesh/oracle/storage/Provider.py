@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import textwrap
 
-from cloudmesh.storage.StorageNewABC import StorageABC
+from cloudmesh.storage.StorageABC import StorageABC
 from cloudmesh.configuration.Config import Config
 
 
