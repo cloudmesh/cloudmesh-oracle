@@ -35,7 +35,7 @@ cloudmesh-abstract
 cloudmesh-configuration
 """.splitlines()
 
-if  "PRODUCTION" not in os.environ:
+if "TESTING" not in os.environ:
     requiers = requiers + requiers_cloudmesh
 
 
