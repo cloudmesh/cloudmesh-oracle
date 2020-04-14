@@ -225,7 +225,7 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
              'region': config['region']}
         return d
 
-    def __init__(self, name=None, configuration="~/.cloudmesh/cloudmesh.yaml"):
+    def __init__(self, name=None):
         """
         Initializes the provider. The default parameters are read from the
         configuration file that is defined in yaml format.
@@ -234,9 +234,9 @@ class Provider(ComputeNodeABC, ComputeProviderPlugin):
         :param configuration: The location of the yaml configuration file
         """
 
-        self.config = Config(config_path=configuration)
+        self.config = Config()
         conf = self.config["cloudmesh"]
-        super().__init__(name, conf)
+        super().__init__(name)
 
         self.user = self.config["cloudmesh.profile.user"]
         self.spec = conf["cloud"][name]
