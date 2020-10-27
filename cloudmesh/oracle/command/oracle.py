@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 from cloudmesh.common.console import Console
 from cloudmesh.common.debug import VERBOSE
 from cloudmesh.shell.command import PluginCommand
