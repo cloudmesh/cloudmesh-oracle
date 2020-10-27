@@ -1,12 +1,12 @@
 # Documentation
 
-[![image](https://img.shields.io/travis/TankerHQ/cloudmesh-oracle.svg?branch=master)](https://travis-ci.org/TankerHQ/cloudmesn-oracle)
+[![image](https://img.shields.io/travis/TankerHQ/cloudmesh-oracle.svg?branch=main)](https://travis-ci.org/TankerHQ/cloudmesn-oracle)
 
 [![image](https://img.shields.io/pypi/pyversions/cloudmesh-oracle.svg)](https://pypi.org/project/cloudmesh-oracle)
 
 [![image](https://img.shields.io/pypi/v/cloudmesh-oracle.svg)](https://pypi.org/project/cloudmesh-oracle/)
 
-[![image](https://img.shields.io/github/license/TankerHQ/python-cloudmesh-oracle.svg)](https://github.com/TankerHQ/python-cloudmesh-oracle/blob/master/LICENSE)
+[![image](https://img.shields.io/github/license/TankerHQ/python-cloudmesh-oracle.svg)](https://github.com/TankerHQ/python-cloudmesh-oracle/blob/main/LICENSE)
 
 see cloudmesh.cloud
 
@@ -92,6 +92,6 @@ Naturally you nee to deal with keys and secgroups also
 * https://oracle-cloud-infrastructure-python-sdk.readthedocs.io/en/latest/api/core/client/oci.core.ComputeClient.html
 * https://docs.cloud.oracle.com/iaas/Content/API/SDKDocs/pythonsdk.htm
 * https://github.com/oracle/oci-python-sdk
-* https://github.com/oracle/oci-python-sdk/blob/master/examples/launch_instance_example.py
-* https://github.com/cloudmesh-community/fa19-516-162/blob/master/project/report.md
+* https://github.com/oracle/oci-python-sdk/blob/main/examples/launch_instance_example.py
+* https://github.com/cloudmesh-community/fa19-516-162/blob/main/project/report.md
 
